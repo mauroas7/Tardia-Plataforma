@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cloud Bot Platform</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <!-- Auth Screen -->
+    <div id="authScreen" class="screen active">
+        <div class="auth-container">
+            <div class="auth-header">
+                <div class="logo">
+                    <i class="fas fa-robot"></i>
+                </div>
+                <h1>TarDia-Cloud Bot Platform</h1>
+                <p>Crea y despliega bots de Telegram automáticamente</p>
+            </div>
+            
+            <div class="auth-form">
+                <div class="tabs">
+                    <button class="tab-btn active" onclick="switchTab('login')">Iniciar Sesión</button>
+                    <button class="tab-btn" onclick="switchTab('register')">Registrarse</button>
+                </div>
+                
+                <form id="loginForm" class="tab-content active">
+                    <div class="form-group">
+                        <label for="loginEmail">Email</label>
+                        <input type="email" id="loginEmail" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="loginPassword">Contraseña</label>
+                        <input type="password" id="loginPassword" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-sign-in-alt"></i>
+                        Iniciar Sesión
+                    </button>
+                </form>
+                
+                <form id="registerForm" class="tab-content">
+                    <div class="form-group">
+                        <label for="registerEmail">Email</label>
+                        <input type="email" id="registerEmail" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="registerPassword">Contraseña</label>
+                        <input type="password" id="registerPassword" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-user-plus"></i>
+                        Crear Cuenta
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Dashboard Screen -->
+    <div id="dashboardScreen" class="screen">
+        <!-- Header -->
+        <header class="dashboard-header">
+            <div class="header-content">
+                <div class="header-left">
+                    <div class="logo">
+                        <i class="fas fa-robot"></i>
+                    </div>
+                    <div class="header-info">
+                        <h1>Cloud Bot Platform</h1>
+                        <p id="userEmail">Dashboard</p>
+                    </div>
+                </div>
+                <div class="header-right">
+                    <button class="btn btn-outline" onclick="logout()">
+                        <i class="fas fa-sign-out-alt"></i>
+                        Salir
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="dashboard-main">
+            <div class="dashboard-content">
+                <!-- Ver Bots Section -->
+                <div class="dashboard-title">
+                    <div>
+                        <h2>Mis Bots</h2>
+                        <p>Gestiona tus bots de Telegram</p>
+                    </div>
+                    <!-- Crear Bot Button -->
+                    <button class="btn btn-primary btn-create" onclick="openCreateBotModal()">
+                        <i class="fas fa-plus"></i>
+                        Crear Nuevo Bot
+                    </button>
+                </div>
+
+                <!-- Stats -->
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i class="fas fa-robot"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h3 id="totalBots">0</h3>
+                            <p>Total Bots</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon active">
+                            <i class="fas fa-check-circle"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h3 id="activeBots">0</h3>
+                            <p>Activos</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon pending">
+                            <i class="fas fa-clock"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h3 id="pendingBots">0</h3>
+                            <p>Desplegando</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Bots Grid -->
+                <div id="botsContainer" class="bots-container">
+                    <div id="emptyState" class="empty-state">
+                        <i class="fas fa-robot"></i>
+                        <h3>No tienes bots aún</h3>
+                        <p>Crea tu primer bot de Telegram</p>
+                        <button class="btn btn-primary" onclick="openCreateBotModal()">
+                            <i class="fas fa-plus"></i>
+                            Crear Mi Primer Bot
+                        </button>
+                    </div>
+                    <div id="botsGrid" class="bots-grid"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Create Bot Modal -->
+    <div id="createBotModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>
+                    <i class="fas fa-robot"></i>
+                    Crear Nuevo Bot
+                </h3>
+                <button class="modal-close" onclick="closeCreateBotModal()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            
+            <form id="createBotForm">
+                <!-- Bot Info -->
+                <div class="form-section">
+                    <h4>Información del Bot</h4>
+                    
+                    <div class="form-group">
+                        <label for="botName">Nombre del Bot</label>
+                        <input type="text" id="botName" placeholder="MiBotSuperCool" required>
+                        <small>Nombre único para tu bot</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="botToken">Token de BotFather</label>
+                        <input type="password" id="botToken" placeholder="123456789:AAAbot..." required>
+                        <small>Obtén tu token desde @BotFather en Telegram</small>
+                    </div>
+                </div>
+
+                <!-- Services -->
+                <div class="form-section">
+                    <h4>Servicios del Bot</h4>
+                    <p>Selecciona qué funcionalidades tendrá tu bot</p>
+                    
+                    <div class="services-grid">
+                        <label class="service-option">
+                            <input type="checkbox" name="servicios" value="clima">
+                            <div class="service-card">
+                                <i class="fas fa-sun"></i>
+                                <h5>Clima</h5>
+                                <p>Consulta del clima por ciudad</p>
+                            </div>
+                        </label>
+                        
+                        <label class="service-option">
+                            <input type="checkbox" name="servicios" value="noticias">
+                            <div class="service-card">
+                                <i class="fas fa-newspaper"></i>
+                                <h5>Noticias</h5>
+                                <p>Últimas noticias del día</p>
+                            </div>
+                        </label>
+                        
+                        <label class="service-option">
+                            <input type="checkbox" name="servicios" value="chistes">
+                            <div class="service-card">
+                                <i class="fas fa-smile"></i>
+                                <h5>Chistes</h5>
+                                <p>Chistes aleatorios</p>
+                            </div>
+                        </label>
+                        
+                        <label class="service-option">
+                            <input type="checkbox" name="servicios" value="ia">
+                            <div class="service-card">
+                                <i class="fas fa-brain"></i>
+                                <h5>Chat IA</h5>
+                                <p>Conversación inteligente</p>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Actions -->
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-outline" onclick="closeCreateBotModal()">
+                        Cancelar
+                    </button>
+                    <button type="submit" class="btn btn-primary" id="createBotBtn">
+                        <i class="fas fa-rocket"></i>
+                        Crear y Desplegar Bot
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="loading-overlay">
+        <div class="loading-content">
+            <div class="spinner"></div>
+            <p id="loadingText">Creando tu bot...</p>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <script src="script.js"></script>
+</body>
+</html>
+

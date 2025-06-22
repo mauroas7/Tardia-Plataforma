@@ -1,0 +1,21 @@
+TarDía Bot Platform - Setup Local Information
+============================================
+
+Minikube IP: 192.168.49.2
+Namespace: bot-platform
+
+URLs de acceso:
+- Frontend: http://localhost:8080 (con port-forward)
+- Backend: http://localhost:8081 (con port-forward)
+- Dashboard: minikube dashboard
+
+MongoDB: MongoDB Atlas (configurado)
+
+Scripts disponibles:
+- ./start-port-forward.sh - Iniciar acceso web
+- ./monitor-local.sh - Monitorear sistema
+- ./logs-local.sh - Ver logs
+- ./restart-local.sh - Reiniciar servicios
+- ./cleanup-local.sh - Limpiar todo
+
+Setup completado: sáb 21 jun 2025 18:49:28 -03
