@@ -226,9 +226,18 @@
                         <label for="botToken">
                             <i class="fas fa-key"></i>
                             Token de BotFather
+                            <button type="button" class="help-btn" onclick="openBotFatherInstructions()" title="¿Cómo obtener el token?">
+                                <i class="fas fa-question-circle"></i>
+                            </button>
                         </label>
                         <input type="password" id="botToken" placeholder="123456789:AAAbot..." required>
-                        <small>Obtén tu token desde @BotFather en Telegram</small>
+                        <small>
+                            <i class="fas fa-info-circle"></i>
+                            ¿No tienes un token? 
+                            <button type="button" class="link-btn" onclick="openBotFatherInstructions()">
+                                Haz clic aquí para obtenerlo
+                            </button>
+                        </small>
                     </div>
                 </div>
 
@@ -306,6 +315,121 @@
                     </button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- BotFather Instructions Modal -->
+    <div id="botFatherModal" class="modal">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content instructions-modal">
+            <div class="modal-header">
+                <h3>
+                    <i class="fab fa-telegram"></i>
+                    Cómo obtener tu Token de BotFather
+                </h3>
+                <button class="modal-close" onclick="closeBotFatherInstructions()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            
+            <div class="instructions-content">
+                <div class="instruction-intro">
+                    <div class="intro-icon">
+                        <i class="fab fa-telegram"></i>
+                    </div>
+                    <div class="intro-text">
+                        <h4>¡Es muy fácil!</h4>
+                        <p>Sigue estos simples pasos para crear tu bot en Telegram y obtener el token necesario.</p>
+                    </div>
+                </div>
+
+                <div class="instructions-steps">
+                    <div class="step">
+                        <div class="step-number">1</div>
+                        <div class="step-content">
+                            <h5>Abre Telegram y busca @BotFather</h5>
+                            <p>BotFather es el bot oficial de Telegram para crear y gestionar bots.</p>
+                            <button class="btn btn-telegram" onclick="openBotFather()">
+                                <i class="fab fa-telegram"></i>
+                                Abrir @BotFather
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="step">
+                        <div class="step-number">2</div>
+                        <div class="step-content">
+                            <h5>Envía el comando /newbot</h5>
+                            <p>Escribe exactamente <code>/newbot</code> y envía el mensaje.</p>
+                            <div class="code-example">
+                                <i class="fas fa-terminal"></i>
+                                <span>/newbot</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="step">
+                        <div class="step-number">3</div>
+                        <div class="step-content">
+                            <h5>Elige un nombre para tu bot</h5>
+                            <p>BotFather te pedirá un nombre. Puede ser cualquier cosa, como "Mi Bot Genial".</p>
+                            <div class="example-box">
+                                <i class="fas fa-lightbulb"></i>
+                                <span>Ejemplo: "Mi Bot de Clima"</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="step">
+                        <div class="step-number">4</div>
+                        <div class="step-content">
+                            <h5>Elige un username único</h5>
+                            <p>Debe terminar en "bot" y ser único. Por ejemplo: <code>mibot_clima_bot</code></p>
+                            <div class="example-box">
+                                <i class="fas fa-at"></i>
+                                <span>Ejemplo: "mibot_clima_bot"</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="step">
+                        <div class="step-number">5</div>
+                        <div class="step-content">
+                            <h5>¡Copia tu token!</h5>
+                            <p>BotFather te dará un token que se ve así:</p>
+                            <div class="token-example">
+                                <i class="fas fa-key"></i>
+                                <span>123456789:AAAbot_token_example_here</span>
+                                <button class="copy-btn" onclick="copyTokenExample()">
+                                    <i class="fas fa-copy"></i>
+                                </button>
+                            </div>
+                            <div class="warning-box">
+                                <i class="fas fa-exclamation-triangle"></i>
+                                <span>¡Importante! Mantén tu token en secreto. No lo compartas con nadie.</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="instructions-footer">
+                    <div class="footer-actions">
+                        <button class="btn btn-outline" onclick="closeBotFatherInstructions()">
+                            <i class="fas fa-arrow-left"></i>
+                            Volver
+                        </button>
+                        <button class="btn btn-telegram" onclick="openBotFather()">
+                            <i class="fab fa-telegram"></i>
+                            Ir a @BotFather
+                        </button>
+                    </div>
+                    
+                    <div class="help-note">
+                        <i class="fas fa-info-circle"></i>
+                        <span>¿Necesitas ayuda? El proceso completo toma menos de 2 minutos.</span>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 

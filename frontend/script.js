@@ -505,6 +505,43 @@ function openTelegramBot(botName) {
   window.open(`https://t.me/${botName}`, "_blank")
 }
 
+// BotFather Instructions functions
+function openBotFatherInstructions() {
+  console.log("🤖 Abriendo instrucciones de BotFather")
+  const modal = document.getElementById("botFatherModal")
+  if (modal) {
+    modal.classList.add("active")
+    document.body.style.overflow = "hidden"
+  }
+}
+
+function closeBotFatherInstructions() {
+  console.log("❌ Cerrando instrucciones de BotFather")
+  const modal = document.getElementById("botFatherModal")
+  if (modal) {
+    modal.classList.remove("active")
+    document.body.style.overflow = "auto"
+  }
+}
+
+function openBotFather() {
+  console.log("🚀 Abriendo BotFather en Telegram")
+  window.open("https://t.me/BotFather", "_blank")
+  showToast("¡Abriendo @BotFather en Telegram!", "info")
+}
+
+function copyTokenExample() {
+  const tokenText = "123456789:AAAbot_token_example_here"
+  navigator.clipboard
+    .writeText(tokenText)
+    .then(() => {
+      showToast("Ejemplo de token copiado al portapapeles", "success")
+    })
+    .catch(() => {
+      showToast("No se pudo copiar el ejemplo", "error")
+    })
+}
+
 function showToast(message, type = "info") {
   console.log(`🍞 Toast: ${message} (${type})`)
   const toast = document.createElement("div")
@@ -526,3 +563,15 @@ function showToast(message, type = "info") {
     }, 5000)
   }
 }
+
+// Close modals on background click
+document.addEventListener("DOMContentLoaded", () => {
+  // Existing code...
+
+  // Add event listener for BotFather modal
+  document.getElementById("botFatherModal").addEventListener("click", function (e) {
+    if (e.target === this || e.target.classList.contains("modal-backdrop")) {
+      closeBotFatherInstructions()
+    }
+  })
+})
