@@ -51,7 +51,8 @@ jobs:
 
       - name: Build and push Frontend image
         run: |
-          docker build -t ${{ env.DOCKER_REGISTRY }}/frontend:${{ steps.image_tag.outputs.IMAGE_TAG }} ./frontend
+          # Corrección: Se especifica la ruta del Dockerfile (-f) y el contexto de build (.)
+          docker build -t ${{ env.DOCKER_REGISTRY }}/frontend:${{ steps.image_tag.outputs.IMAGE_TAG }} -f ./frontend/Dockerfile .
           docker push ${{ env.DOCKER_REGISTRY }}/frontend:${{ steps.image_tag.outputs.IMAGE_TAG }}
 
       - name: Create deployment artifact
