@@ -290,44 +290,23 @@ app.post("/api/crear-bot", authenticateToken, async (req, res) => {
       services: servicios,
     })
 
-    // Verificar límite de bots
     const userBotCount = await Bot.countDocuments({ user_id: req.user.id })
     if (userBotCount >= 20) {
-      log("warn", "Bot creation failed - limit reached", {
-        userId: req.user.id,
-        currentCount: userBotCount,
-      })
-      return res.status(400).json({
-        message: "Has alcanzado el límite máximo de 20 bots por usuario",
-      })
+      log("warn", "Bot creation failed - limit reached", { userId: req.user.id })
+      return res.status(400).json({ message: "Has alcanzado el límite máximo de 20 bots por usuario" })
     }
 
-    // Verificar que el nombre del bot sea único para el usuario
-    const existingBot = await Bot.findOne({
-      user_id: req.user.id,
-      name: name,
-    })
+    const existingBot = await Bot.findOne({ user_id: req.user.id, name: name })
     if (existingBot) {
-      log("warn", "Bot creation failed - name exists", {
-        userId: req.user.id,
-        botName: name,
-      })
-      return res.status(400).json({
-        message: "Ya tienes un bot con ese nombre",
-      })
+      log("warn", "Bot creation failed - name exists", { userId: req.user.id, botName: name })
+      return res.status(400).json({ message: "Ya tienes un bot con ese nombre" })
     }
 
     if (!name || !token || !servicios || servicios.length === 0) {
-      log("warn", "Bot creation failed - missing fields", {
-        userId: req.user.id,
-        hasName: !!name,
-        hasToken: !!token,
-        servicesCount: servicios?.length || 0,
-      })
+      log("warn", "Bot creation failed - missing fields", { userId: req.user.id })
       return res.status(400).json({ message: "Todos los campos son requeridos" })
     }
 
-    // Create bot record
     const bot = new Bot({
       user_id: req.user.id,
       name,
@@ -337,386 +316,104 @@ app.post("/api/crear-bot", authenticateToken, async (req, res) => {
     })
 
     await bot.save()
-    log("info", "Bot record created", {
-      userId: req.user.id,
-      botId: bot._id,
-      botName: name,
-    })
+    log("info", "Bot record created", { userId: req.user.id, botId: bot._id, botName: name })
 
-    // Start bot creation process asynchronously
     createBotAsync(bot)
 
     res.status(201).json(bot)
   } catch (error) {
-    log("error", "Bot creation error:", {
-      userId: req.user?.id,
-      message: error.message,
-      stack: error.stack,
-    })
+    log("error", "Bot creation error:", { userId: req.user?.id, message: error.message, stack: error.stack })
     res.status(500).json({ message: "Error interno del servidor" })
   }
 })
 
-// Bot creation logic con mejor error handling
+// =================================================================
+// FUNCIÓN DE CREACIÓN DE BOTS CORREGIDA Y ROBUSTA
+// =================================================================
 async function createBotAsync(bot) {
+  const workingDir = process.cwd();
+  const templateDir = path.join("/app", "bot-templates"); 
+  const botDir = path.join(workingDir, "generated-bots", bot._id.toString());
+
   try {
-    log("info", "Starting bot deployment", {
-      botId: bot._id,
-      botName: bot.name,
-    })
+    log("info", "Starting bot deployment", { botId: bot._id, botName: bot.name });
 
-    // 1. Verificar directorios y crear estructura si no existe
-    const workingDir = process.cwd()
-    log("info", "Working directory", { workingDir })
+    // 1. Limpiar directorio previo y crearlo de nuevo
+    await fs.rm(botDir, { recursive: true, force: true });
+    await fs.mkdir(botDir, { recursive: true });
+    log("info", "Bot directory created", { botDir });
 
-    // Buscar el directorio de templates en varias ubicaciones posibles
-    const possibleTemplateDirs = [
-      path.join(workingDir, "bot-templates"),
-      path.join(__dirname, "bot-templates"),
-      path.join(__dirname, "..", "bot-templates"),
-      path.join("/app", "bot-templates"),
-    ]
+    // 2. ¡EL ARREGLO CLAVE! Copiar TODA la plantilla (archivos y carpetas) al directorio del bot.
+    log("info", "Copying all template files...", { from: templateDir, to: botDir });
+    await execAsync(`cp -rT ${templateDir}/. ${botDir}/`);
+    log("info", "Template files copied successfully");
 
-    let templateDir = null
-    for (const dir of possibleTemplateDirs) {
-      try {
-        await fs.access(dir)
-        templateDir = dir
-        log("info", "Template directory found", { templateDir })
-        break
-      } catch (error) {
-        log("info", "Template directory not found", { attemptedDir: dir })
-      }
-    }
+    // 3. Modificar el package.json en el nuevo directorio
+    const packageJsonPath = path.join(botDir, "package.json");
+    const packageTemplate = await fs.readFile(packageJsonPath, "utf8");
+    const packageJson = JSON.parse(packageTemplate);
+    packageJson.name = `bot-${bot.name.toLowerCase()}`;
+    packageJson.description = `Bot ${bot.name} creado con TarDía Cloud Bot Platform`;
+    await fs.writeFile(packageJsonPath, JSON.stringify(packageJson, null, 2));
+    log("info", "package.json customized");
 
-    if (!templateDir) {
-      log("warn", "No template directory found, creating basic templates")
-      // Crear templates básicos si no existen
-      templateDir = path.join(workingDir, "bot-templates")
-      await createBasicTemplates(templateDir)
-    }
+    // 4. Crear el archivo .env en el nuevo directorio
+    const envContent = generateBotEnvFile(bot);
+    await fs.writeFile(path.join(botDir, ".env"), envContent);
+    log("info", "File written", { filename: ".env" });
 
-    // 2. Generar archivos del bot
-    const botFiles = await generateBotFiles(bot, templateDir)
-    const botDir = path.join(workingDir, "generated-bots", bot._id.toString())
-
-    await fs.mkdir(botDir, { recursive: true })
-    log("info", "Bot directory created", { botDir })
-
-    // Escribir todos los archivos
-    for (const [filename, content] of Object.entries(botFiles)) {
-      await fs.writeFile(path.join(botDir, filename), content)
-      log("info", "File written", { filename, size: content.length })
-    }
-
-    // 3. Construir imagen Docker
-    const imageName = `bot-${bot.name.toLowerCase()}-${bot._id}:latest`
-    log("info", "Building Docker image", { imageName })
-
+    // 5. Construir imagen Docker
+    const imageName = `bot-${bot.name.toLowerCase()}-${bot._id}:latest`;
+    log("info", "Building Docker image", { imageName });
     try {
-      const { stdout, stderr } = await execAsync(`docker build -t ${imageName} ${botDir}`)
-      log("info", "Docker build completed", { imageName, stdout: stdout.slice(-200) })
+      const { stdout } = await execAsync(`docker build -t ${imageName} ${botDir}`);
+      log("info", "Docker build completed", { imageName, stdout: stdout.slice(-200) });
     } catch (error) {
-      log("error", "Docker build failed", {
-        imageName,
-        error: error.message,
-        stderr: error.stderr,
-      })
-      throw new Error(`Docker build failed: ${error.message}`)
+      log("error", "Docker build failed", { imageName, error: error.message, stderr: error.stderr });
+      throw new Error(`Docker build failed: ${error.message}`);
     }
 
-    // 4. Desplegar en Kubernetes
-    const deploymentYaml = generateKubernetesDeploymentForBot(bot, imageName)
-    const deploymentFile = path.join(botDir, "k8s-deployment.yaml")
-    await fs.writeFile(deploymentFile, deploymentYaml)
-
-    log("info", "Applying Kubernetes deployment", { deploymentFile })
+    // 6. Desplegar en Kubernetes
+    const deploymentYaml = generateKubernetesDeploymentForBot(bot, imageName);
+    const deploymentFile = path.join(botDir, "k8s-deployment.yaml");
+    await fs.writeFile(deploymentFile, deploymentYaml);
+    log("info", "Applying Kubernetes deployment", { deploymentFile });
     try {
-      const { stdout, stderr } = await execAsync(`kubectl apply -f ${deploymentFile}`)
-      log("info", "Kubernetes deployment applied", { stdout })
+      const { stdout } = await execAsync(`kubectl apply -f ${deploymentFile}`);
+      log("info", "Kubernetes deployment applied", { stdout });
     } catch (error) {
-      log("error", "Kubernetes deployment failed", {
-        error: error.message,
-        stderr: error.stderr,
-      })
-      throw new Error(`Kubernetes deployment failed: ${error.message}`)
+      log("error", "Kubernetes deployment failed", { error: error.message, stderr: error.stderr });
+      throw new Error(`Kubernetes deployment failed: ${error.message}`);
     }
+    
+    // 7. Esperar a que el pod esté listo
+    const deploymentName = `bot-${bot.name.toLowerCase()}-${bot._id}`;
+    log("info", "Waiting for deployment to be ready", { deploymentName });
+    await execAsync(`kubectl wait --for=condition=available --timeout=300s deployment/${deploymentName} -n ${KUBERNETES_NAMESPACE}`);
+    log("info", "Deployment is ready", { deploymentName });
 
-    // 5. Esperar a que el pod esté listo
-    const deploymentName = `bot-${bot.name.toLowerCase()}-${bot._id}`
-    log("info", "Waiting for deployment to be ready", { deploymentName })
-
-    try {
-      await execAsync(
-        `kubectl wait --for=condition=available --timeout=300s deployment/${deploymentName} -n ${KUBERNETES_NAMESPACE}`,
-      )
-      log("info", "Deployment is ready", { deploymentName })
-    } catch (error) {
-      log("error", "Deployment wait failed", {
-        deploymentName,
-        error: error.message,
-      })
-      throw new Error(`Deployment wait failed: ${error.message}`)
-    }
-
-    // 6. Actualizar estado del bot
-    const serviceName = `${bot.name.toLowerCase()}-service`
+    // 8. Actualizar estado del bot en la base de datos
+    const serviceName = `${bot.name.toLowerCase()}-service`;
     await Bot.findByIdAndUpdate(bot._id, {
       status: "active",
       url: `https://t.me/${bot.name}`,
       deploy_url: `http://${serviceName}.${KUBERNETES_NAMESPACE}.svc.cluster.local`,
       kubernetes_deployment: deploymentName,
-      error_message: null, // Limpiar errores previos
-    })
+      error_message: null,
+    });
+    log("info", "Bot deployed successfully", { botId: bot._id, botName: bot.name });
 
-    log("info", "Bot deployed successfully", {
-      botId: bot._id,
-      botName: bot.name,
-      telegramUrl: `https://t.me/${bot.name}`,
-      deployUrl: `http://${serviceName}.${KUBERNETES_NAMESPACE}.svc.cluster.local`,
-    })
   } catch (error) {
-    log("error", "Bot deployment failed", {
-      botId: bot._id,
-      botName: bot.name,
-      error: error.message,
-      stack: error.stack,
-    })
-
+    log("error", "Bot deployment failed", { botId: bot._id, botName: bot.name, error: error.message, stack: error.stack });
     await Bot.findByIdAndUpdate(bot._id, {
       status: "error",
       error_message: error.message,
-    })
+    });
   }
 }
 
-// Función para crear templates básicos si no existen
-async function createBasicTemplates(templateDir) {
-  try {
-    await fs.mkdir(templateDir, { recursive: true })
-    log("info", "Creating basic templates", { templateDir })
 
-    // Template básico de index.js
-    const basicIndexTemplate = `import express from "express"
-import TelegramBot from "node-telegram-bot-api"
-import dotenv from "dotenv"
-
-dotenv.config()
-
-// --- Servidor Express mínimo ---
-const app = express()
-const port = process.env.PORT || 3000
-
-app.get("/", (req, res) => {
-  res.json({
-    status: "active",
-    bot: process.env.BOT_NAME || "TarDía Bot",
-    timestamp: new Date().toISOString(),
-  })
-})
-
-app.get("/health", (req, res) => {
-  res.json({
-    status: "healthy",
-    uptime: process.uptime(),
-    bot: process.env.BOT_NAME,
-  })
-})
-
-app.listen(port, () => {
-  console.log(\`🤖 Bot \${process.env.BOT_NAME} corriendo en puerto \${port}\`)
-})
-
-// --- Bot de Telegram ---
-const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true })
-
-bot.onText(/\\/start/, (msg) => {
-  const chatId = msg.chat.id
-  const botName = process.env.BOT_NAME || "TarDía"
-
-  bot.sendMessage(
-    chatId,
-    \`¡Hola \${msg.from.first_name}! Soy \${botName} 🤖\
-\
-Comandos disponibles:\
-/help - Mostrar ayuda\
-/chiste - Escuchar un chiste\`,
-  )
-})
-
-// Chistes
-const chistes = [
-  "¿Por qué los pájaros vuelan hacia el sur en invierno? Porque es muy lejos para caminar.",
-  "¿Qué le dice un taco a otro taco? ¿Quieres que vayamos por unas quesadillas?",
-  "¿Cómo se llama el campeón de buceo japonés? Tokofondo.",
-  "¿Qué hace una abeja en el gimnasio? ¡Zum-ba!",
-  "¿Por qué los elefantes no usan computadoras? Porque le tienen miedo al mouse.",
-]
-
-bot.onText(/\\/chiste/, (msg) => {
-  const chatId = msg.chat.id
-  const randomJoke = chistes[Math.floor(Math.random() * chistes.length)]
-  bot.sendMessage(chatId, \`😄 \${randomJoke}\`)
-})
-
-// Comando de ayuda
-bot.onText(/\\/help/, (msg) => {
-  const chatId = msg.chat.id
-  const botName = process.env.BOT_NAME || "TarDía"
-
-  const helpMessage = \`🤖 \${botName} - Comandos disponibles:
-
-/start - Iniciar bot
-/chiste - Escuchar un chiste
-/help - Mostrar esta ayuda
-
-¡Creado con TarDía Cloud Bot Platform! 🚀\`
-
-  bot.sendMessage(chatId, helpMessage)
-})
-
-// Error handling
-bot.on("polling_error", (error) => {
-  console.error("❌ Polling error:", error)
-})
-
-console.log(\`🤖 Bot \${process.env.BOT_NAME || "TarDía"} iniciado correctamente\`)
-`
-
-    // Template básico de package.json
-    const basicPackageTemplate = {
-      name: "bot-template",
-      version: "1.0.0",
-      description: "Bot template for TarDía Cloud Bot Platform",
-      main: "index.js",
-      type: "module",
-      scripts: {
-        start: "node index.js",
-        dev: "nodemon index.js",
-      },
-      dependencies: {
-        express: "^4.18.2",
-        "node-telegram-bot-api": "^0.64.0",
-        dotenv: "^16.3.1",
-      },
-    }
-
-    // Template básico de Dockerfile
-    const basicDockerfileTemplate = `FROM node:18-alpine
-
-# Instalar dependencias del sistema
-RUN apk add --no-cache curl bash
-
-# Crear directorio de la aplicación
-WORKDIR /app
-
-# Crear usuario no-root
-RUN addgroup -g 1001 -S botuser && \\
-    adduser -S botuser -u 1001
-
-# Copiar archivos de configuración
-COPY package*.json ./
-
-# Instalar dependencias
-RUN npm install --production && npm cache clean --force
-
-# Copiar código fuente
-COPY --chown=botuser:botuser . .
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \\
-  CMD curl -f http://localhost:\${PORT:-3000}/health || exit 1
-
-# Cambiar al usuario no-root
-USER botuser
-
-# Exponer puerto
-EXPOSE 3000
-
-# Comando de inicio
-CMD ["npm", "start"]`
-
-    // Escribir templates
-    await fs.writeFile(path.join(templateDir, "index.js"), basicIndexTemplate)
-    await fs.writeFile(path.join(templateDir, "package.json"), JSON.stringify(basicPackageTemplate, null, 2))
-    await fs.writeFile(path.join(templateDir, "Dockerfile"), basicDockerfileTemplate)
-
-    // Crear archivo tareas.js vacío para compatibilidad
-    await fs.writeFile(path.join(templateDir, "tareas.js"), "// Archivo de compatibilidad\nexport default {}")
-
-    log("info", "Basic templates created successfully", { templateDir })
-  } catch (error) {
-    log("error", "Error creating basic templates", { error: error.message })
-    throw error
-  }
-}
-
-// REEMPLAZA LA FUNCIÓN ANTIGUA CON ESTA VERSIÓN CORREGIDA
-
-async function generateBotFiles(bot, templateDir) {
-  const files = {}
-
-  try {
-    log("info", "Loading templates", { templateDir })
-
-    // CAMBIO 1: Añadimos 'package-lock.json' a la lista de archivos requeridos.
-    const requiredTemplates = ["index.js", "package.json", "package-lock.json", "Dockerfile"]
-
-    for (const template of requiredTemplates) {
-      const templatePath = path.join(templateDir, template)
-      try {
-        await fs.access(templatePath)
-        log("info", "Template found", { template })
-      } catch (error) {
-        log("error", "Template not found", { template, templatePath })
-        // También veo que en una versión anterior buscabas "Dockerfile.txt".
-        // Esta versión busca "Dockerfile", lo cual es correcto.
-        throw new Error(`Required template not found: ${template}`)
-      }
-    }
-
-    // CAMBIO 2: Leemos el contenido de 'package-lock.json' junto con los demás.
-    const indexTemplate = await fs.readFile(path.join(templateDir, "index.js"), "utf8")
-    const packageTemplate = await fs.readFile(path.join(templateDir, "package.json"), "utf8")
-    const packageLockTemplate = await fs.readFile(path.join(templateDir, "package-lock.json"), "utf8") // <-- Nueva línea
-    const dockerfileTemplate = await fs.readFile(path.join(templateDir, "Dockerfile"), "utf8")
-
-    // Generar archivos personalizados para el bot
-    files["index.js"] = indexTemplate
-    files["Dockerfile"] = dockerfileTemplate
-
-    // Personalizar package.json
-    const packageJson = JSON.parse(packageTemplate)
-    packageJson.name = `bot-${bot.name.toLowerCase()}`
-    packageJson.description = `Bot ${bot.name} creado con TarDía Cloud Bot Platform`
-    files["package.json"] = JSON.stringify(packageJson, null, 2)
-
-    // CAMBIO 3: Añadimos 'package-lock.json' a los archivos que se van a generar.
-    files["package-lock.json"] = packageLockTemplate // <-- Nueva línea
-
-    // Generar archivo de configuración específico del bot
-    files[".env"] = generateBotEnvFile(bot)
-
-    log("info", "Templates loaded successfully", {
-      botName: bot.name,
-      filesGenerated: Object.keys(files).length,
-    })
-
-    return files
-  } catch (error) {
-    log("error", "Error loading templates", {
-      botName: bot.name,
-      error: error.message,
-      stack: error.stack,
-    })
-
-    // Fallback al código anterior si no se pueden cargar los templates
-    log("warn", "Using legacy template generation")
-    return generateBotFilesLegacy(bot)
-  }
-}
-
-// Generar archivo .env para el bot
+// Función para generar archivo .env para el bot
 function generateBotEnvFile(bot) {
   return `# Configuración del Bot ${bot.name}
 BOT_NAME=${bot.name}
@@ -772,13 +469,12 @@ app.delete("/api/bots/:id", authenticateToken, async (req, res) => {
         botId,
         error: k8sError.message,
       })
-      // Continuar con la eliminación del bot aunque falle Kubernetes
     }
 
     // Eliminar directorio del bot
     try {
       const botDir = path.join(process.cwd(), "generated-bots", botId.toString())
-      await fs.rmdir(botDir, { recursive: true })
+      await fs.rm(botDir, { recursive: true, force: true });
       log("info", "Bot directory deleted", { botDir })
     } catch (dirError) {
       log("error", "Error deleting bot directory", {
@@ -889,62 +585,4 @@ spec:
     targetPort: 3000
   type: ClusterIP
 `
-}
-
-// Función legacy como fallback
-function generateBotFilesLegacy(bot) {
-  log("warn", "Using legacy bot file generation", { botName: bot.name })
-
-  const basicIndex = `
-const express = require('express')
-const app = express()
-const port = process.env.PORT || 3000
-
-app.get('/', (req, res) => {
-  res.json({
-    status: 'active',
-    bot: '${bot.name}',
-    timestamp: new Date().toISOString()
-  })
-})
-
-app.get('/health', (req, res) => {
-  res.json({
-    status: 'healthy',
-    bot: '${bot.name}',
-    uptime: process.uptime()
-  })
-})
-
-app.listen(port, () => {
-  console.log(\`Bot ${bot.name} running on port \${port}\`)
-})
-`
-
-  return {
-    "index.js": basicIndex,
-    "package.json": JSON.stringify(
-      {
-        name: `bot-${bot.name.toLowerCase()}`,
-        version: "1.0.0",
-        main: "index.js",
-        scripts: {
-          start: "node index.js",
-        },
-        dependencies: {
-          express: "^4.18.2",
-        },
-      },
-      null,
-      2,
-    ),
-    Dockerfile: `FROM node:18-alpine
-WORKDIR /app
-COPY package*.json ./
-RUN npm install --production
-COPY . .
-EXPOSE 3000
-CMD ["npm", "start"]`,
-    ".env": `BOT_NAME=${bot.name}\nSERVICES=${bot.servicios.join(",")}`,
-  }
 }
