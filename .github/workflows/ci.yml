@@ -54,11 +54,10 @@ jobs:
           docker push ${{ env.DOCKER_REGISTRY }}/frontend:${{ steps.image_tag.outputs.IMAGE_TAG }}
 
       # --- INICIO DE LA CORRECCIÓN ---
-      # Ahora, el workflow de CI llama a la versión de cd.yml que existe
-      # en la misma rama que se está ejecutando (ej. develop llama a develop).
-      # Esto elimina el problema de dependencia con la rama 'main'.
+      # Usamos github.sha para referenciar la versión exacta del workflow
+      # en el mismo commit, eliminando cualquier ambigüedad de ramas.
       - name: Call CD Workflow
-        uses: ./.github/workflows/cd.yml@${{ github.ref_name }}
+        uses: ./.github/workflows/cd.yml@${{ github.sha }}
         with:
           image_tag: ${{ steps.image_tag.outputs.IMAGE_TAG }}
           branch_name: ${{ steps.image_tag.outputs.BRANCH_NAME }}
