@@ -167,8 +167,11 @@ setup_kubernetes() {
     
     # Apply configurations
     log_info "Aplicando configuraciones..."
+    
+    kubectl apply -f k8s/rbac.yaml
+    
     kubectl apply -f k8s/configmaps.yaml
-    kubectl apply -f k8s/backend-atlas.yaml
+    kubectl apply -f k8s/deployment.yaml
     kubectl apply -f k8s/frontend.yaml
 
     # Create nginx configmap

@@ -1,0 +1,35 @@
+# k8s/rbac.yaml
+
+# 1. Creamos una ServiceAccount dedicada para nuestra aplicación backend.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: bot-creator-account
+  namespace: bot-platform
+---
+# 2. Creamos un Role que define los permisos necesarios.
+# Necesita poder gestionar Deployments, Services y Pods (para ver su estado/logs).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: bot-creator-role
+  namespace: bot-platform
+rules:
+- apiGroups: ["", "apps"] # "" para core (Services, Pods), "apps" para Deployments
+  resources: ["deployments", "services", "pods", "pods/log"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+# 3. Creamos un RoleBinding que asigna el Role a nuestra ServiceAccount.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: bot-creator-binding
+  namespace: bot-platform
+subjects:
+- kind: ServiceAccount
+  name: bot-creator-account # Asignar al ServiceAccount que creamos
+  namespace: bot-platform
+roleRef:
+  kind: Role
+  name: bot-creator-role # Asignar los permisos del Role que creamos
+  apiGroup: rbac.authorization.k8s.io

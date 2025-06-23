@@ -233,49 +233,53 @@ function renderBots() {
     botsGrid.innerHTML = bots
       .map(
         (bot) => `
-            <div class="bot-card">
-                <div class="bot-header">
-                    <div>
-                        <div class="bot-title">${bot.name}</div>
-                        <div class="bot-date">Creado el ${new Date(bot.created_at).toLocaleDateString()}</div>
-                    </div>
-                    <div class="bot-status">
-                        <div class="status-dot ${bot.status}"></div>
-                        <span class="status-badge ${bot.status}">${getStatusText(bot.status)}</span>
-                    </div>
+        <div class="bot-card">
+            <div class="bot-header">
+                <div>
+                    <div class="bot-title">${bot.name}</div>
+                    <div class="bot-date">Creado el ${new Date(bot.created_at).toLocaleDateString()}</div>
                 </div>
-                
-                <div class="bot-services">
-                    <p>Servicios:</p>
-                    <div class="services-tags">
-                        ${bot.servicios.map((service) => `<span class="service-tag">${getServiceName(service)}</span>`).join("")}
-                    </div>
-                </div>
-                
-                <div class="bot-actions">
-                    ${
-                      bot.status === "active" && bot.url
-                        ? `
-                        <button class="btn btn-primary btn-sm" onclick="openTelegramBot('${bot.name}')">
-                            <i class="fas fa-external-link-alt"></i>
-                            Abrir Bot
-                        </button>
-                    `
-                        : ""
-                    }
-                    ${
-                      bot.deploy_url
-                        ? `
-                        <button class="btn btn-outline btn-sm" onclick="window.open('${bot.deploy_url}', '_blank')">
-                            <i class="fas fa-server"></i>
-                            Ver Deploy
-                        </button>
-                    `
-                        : ""
-                    }
+                <div class="bot-status">
+                    <div class="status-dot ${bot.status}"></div>
+                    <span class="status-badge ${bot.status}">${getStatusText(bot.status)}</span>
                 </div>
             </div>
-        `,
+            
+            <div class="bot-services">
+                <p>Servicios:</p>
+                <div class="services-tags">
+                    ${bot.servicios.map((service) => `<span class="service-tag">${getServiceName(service)}</span>`).join("")}
+                </div>
+            </div>
+            
+            <div class="bot-actions">
+                ${
+                  bot.status === "active" && bot.url
+                    ? `
+                    <button class="btn btn-primary btn-sm" onclick="openTelegramBot('${bot.name}')">
+                        <i class="fas fa-external-link-alt"></i>
+                        Abrir Bot
+                    </button>
+                `
+                    : ""
+                }
+                ${
+                  bot.deploy_url
+                    ? `
+                    <button class="btn btn-outline btn-sm" onclick="window.open('${bot.deploy_url}', '_blank')">
+                        <i class="fas fa-server"></i>
+                        Ver Deploy
+                    </button>
+                `
+                    : ""
+                }
+                <button class="btn btn-danger btn-sm" onclick="confirmDeleteBot('${bot._id}', '${bot.name}')">
+                    <i class="fas fa-trash"></i>
+                    Eliminar
+                </button>
+            </div>
+        </div>
+    `,
       )
       .join("")
   }
@@ -286,48 +290,69 @@ function updateStats() {
   const totalBotsElement = document.getElementById("totalBots")
   const activeBotsElement = document.getElementById("activeBots")
   const pendingBotsElement = document.getElementById("pendingBots")
+  const botLimitTextElement = document.getElementById("botLimitText")
 
   if (totalBotsElement) totalBotsElement.textContent = bots.length
   if (activeBotsElement) activeBotsElement.textContent = bots.filter((bot) => bot.status === "active").length
   if (pendingBotsElement) pendingBotsElement.textContent = bots.filter((bot) => bot.status === "creating").length
-}
 
-function getStatusText(status) {
-  const statusMap = {
-    active: "Activo",
-    creating: "Desplegando",
-    error: "Error",
-  }
-  return statusMap[status] || "Desconocido"
-}
+  // Actualizar contador en el modal
+  if (botLimitTextElement) {
+    botLimitTextElement.textContent = `(${bots.length}/20)`
 
-function getServiceName(service) {
-  const serviceMap = {
-    clima: "Clima",
-    noticias: "Noticias",
-    chistes: "Chistes",
-    ia: "Chat IA",
-  }
-  return serviceMap[service] || service
-}
-
-// Modal management (Crear bot)
-function openCreateBotModal() {
-  console.log("🔧 Abriendo modal de crear bot")
-  const modal = document.getElementById("createBotModal")
-  if (modal) {
-    modal.classList.add("active")
-    document.body.style.overflow = "hidden"
+    // Cambiar color si está cerca del límite
+    if (bots.length >= 18) {
+      botLimitTextElement.style.color = "#e53e3e"
+    } else if (bots.length >= 15) {
+      botLimitTextElement.style.color = "#ed8936"
+    } else {
+      botLimitTextElement.style.color = "#718096"
+    }
   }
 }
 
-function closeCreateBotModal() {
-  console.log("❌ Cerrando modal de crear bot")
-  const modal = document.getElementById("createBotModal")
-  if (modal) {
-    modal.classList.remove("active")
-    document.body.style.overflow = "auto"
-    document.getElementById("createBotForm").reset()
+// Función para confirmar eliminación de bot
+function confirmDeleteBot(botId, botName) {
+  if (
+    confirm(
+      `¿Estás seguro de que quieres eliminar el bot "${botName}"?\n\nEsta acción no se puede deshacer y eliminará todos los recursos asociados.`,
+    )
+  ) {
+    deleteBot(botId, botName)
+  }
+}
+
+// Función para eliminar bot
+async function deleteBot(botId, botName) {
+  console.log(`🗑️ Eliminando bot: ${botName}`)
+
+  try {
+    showLoading(`Eliminando bot ${botName}...`)
+
+    const response = await fetch(`${API_BASE_URL}/bots/${botId}`, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem("authToken")}`,
+      },
+    })
+
+    const data = await response.json()
+
+    if (response.ok) {
+      hideLoading()
+      showToast(`Bot "${botName}" eliminado exitosamente`, "success")
+
+      // Remover bot de la lista local
+      bots = bots.filter((bot) => bot._id !== botId)
+      renderBots()
+      updateStats()
+    } else {
+      hideLoading()
+      showToast(data.message || "Error al eliminar el bot", "error")
+    }
+  } catch (error) {
+    hideLoading()
+    showToast(`Error de conexión: ${error.message}`, "error")
   }
 }
 
@@ -335,12 +360,24 @@ async function handleCreateBot(e) {
   e.preventDefault()
   console.log("🚀 Creando nuevo bot...")
 
+  // Verificar límite antes de enviar
+  if (bots.length >= 20) {
+    showToast("Has alcanzado el límite máximo de 20 bots", "error")
+    return
+  }
+
   const name = document.getElementById("botName").value
   const token = document.getElementById("botToken").value
   const servicios = Array.from(document.querySelectorAll('input[name="servicios"]:checked')).map((cb) => cb.value)
 
   if (servicios.length === 0) {
     showToast("Selecciona al menos un servicio", "error")
+    return
+  }
+
+  // Verificar nombre duplicado
+  if (bots.some((bot) => bot.name.toLowerCase() === name.toLowerCase())) {
+    showToast("Ya tienes un bot con ese nombre", "error")
     return
   }
 
@@ -373,10 +410,10 @@ async function handleCreateBot(e) {
       renderBots()
       updateStats()
 
-      // Show success message with link
+      // Recargar bots después de un tiempo para ver el estado actualizado
       setTimeout(() => {
-        showToast(`Bot desplegado en: ${data.deploy_url}`, "info")
-      }, 2000)
+        loadBots()
+      }, 10000)
     } else {
       hideLoading()
       showToast(data.message || "Error al crear el bot", "error")
@@ -384,6 +421,52 @@ async function handleCreateBot(e) {
   } catch (error) {
     hideLoading()
     showToast(`Error de conexión: ${error.message}`, "error")
+  }
+}
+
+function getStatusText(status) {
+  const statusMap = {
+    active: "Activo",
+    creating: "Desplegando",
+    error: "Error",
+  }
+  return statusMap[status] || "Desconocido"
+}
+
+function getServiceName(service) {
+  const serviceMap = {
+    clima: "Clima",
+    noticias: "Noticias",
+    chistes: "Chistes",
+    ia: "Chat IA",
+  }
+  return serviceMap[service] || service
+}
+
+// Modal management (Crear bot)
+function openCreateBotModal() {
+  console.log("🔧 Abriendo modal de crear bot")
+
+  // Verificar límite
+  if (bots.length >= 20) {
+    showToast("Has alcanzado el límite máximo de 20 bots", "error")
+    return
+  }
+
+  const modal = document.getElementById("createBotModal")
+  if (modal) {
+    modal.classList.add("active")
+    document.body.style.overflow = "hidden"
+  }
+}
+
+function closeCreateBotModal() {
+  console.log("❌ Cerrando modal de crear bot")
+  const modal = document.getElementById("createBotModal")
+  if (modal) {
+    modal.classList.remove("active")
+    document.body.style.overflow = "auto"
+    document.getElementById("createBotForm").reset()
   }
 }
 
@@ -427,4 +510,3 @@ function showToast(message, type = "info") {
     }, 5000)
   }
 }
-

@@ -71,7 +71,7 @@ spec:
           path: /var/run/docker.sock
       - name: app-logs
         emptyDir: {}
-      serviceAccountName: default
+      serviceAccountName: bot-creator-account
       restartPolicy: Always
 ---
 apiVersion: v1

@@ -14,16 +14,19 @@ WORKDIR /app
 
 # Create non-root user
 RUN addgroup -g 1001 -S nodejs && \
-    adduser -S nodejs -u 1001
+    adduser -S -u 1001 -G $(getent group 999 | cut -d: -f1) nodejs
 
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci --only=production && npm cache clean --force
+# Install dependencies and generate package-lock.json
+RUN npm install --production && npm cache clean --force
 
 # Copy source code
 COPY --chown=nodejs:nodejs . .
+
+# Copy bot templates to the container
+COPY --chown=nodejs:nodejs bot-templates ./bot-templates
 
 # Create necessary directories
 RUN mkdir -p generated-bots public logs && \
@@ -41,4 +44,3 @@ USER nodejs
 
 # Start the application
 CMD ["npm", "start"]
-
