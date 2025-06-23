@@ -151,9 +151,9 @@ setup_kubernetes() {
       --namespace=bot-platform
     
     kubectl create secret generic bot-secrets \
-      --from-literal=weather-api-key="" \
-      --from-literal=news-api-key="" \
-      --from-literal=gemini-api-key="" \
+      --from-literal=weather-api-key="a9fa79faf7ce399e52f803b1abc336dd" \
+      --from-literal=news-api-key="d93ff7fc3de6c7b1142a5111c59ec2eb" \
+      --from-literal=gemini-api-key="AIzaSyC95s7mI5n9BNCyQdWNacPnm13PKS8hekw" \
       --namespace=bot-platform
     
     log_success "Secretos creados"
