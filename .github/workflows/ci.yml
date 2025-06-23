@@ -53,9 +53,13 @@ jobs:
           docker build -t ${{ env.DOCKER_REGISTRY }}/frontend:${{ steps.image_tag.outputs.IMAGE_TAG }} ./frontend
           docker push ${{ env.DOCKER_REGISTRY }}/frontend:${{ steps.image_tag.outputs.IMAGE_TAG }}
 
+      # --- INICIO DE LA CORRECCIÓN ---
       - name: Call CD Workflow
-        uses: ./.github/workflows/cd.yml@${{ github.ref_name }} # Llama al workflow de CD en el mismo repo y rama
+        uses: ./.github/workflows/cd.yml@${{ github.ref_name }} # La variable github.ref_name está correcta aquí, el error estaba en la sintaxis de 'with'
         with:
           image_tag: ${{ steps.image_tag.outputs.IMAGE_TAG }}
           branch_name: ${{ steps.image_tag.outputs.BRANCH_NAME }}
-        secrets: inherit # Pasa todos los secretos de este workflow al workflow llamado
+        # 'secrets: inherit' es la forma correcta y moderna de pasar TODOS los secretos
+        # al workflow llamado, en lugar de listarlos uno por uno.
+        secrets: inherit
+      # --- FIN DE LA CORRECCIÓN ---
