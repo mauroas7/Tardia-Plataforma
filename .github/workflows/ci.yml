@@ -1,4 +1,3 @@
-# .github/workflows/ci.yml
 name: CI - Build and Push Images
 
 on:
@@ -51,7 +50,7 @@ jobs:
 
       - name: Build and push Frontend image
         run: |
-          # Corrección: Se especifica la ruta del Dockerfile (-f) y el contexto de build (.)
+          # CAMBIO: Usar contexto raíz y especificar Dockerfile
           docker build -t ${{ env.DOCKER_REGISTRY }}/frontend:${{ steps.image_tag.outputs.IMAGE_TAG }} -f ./frontend/Dockerfile .
           docker push ${{ env.DOCKER_REGISTRY }}/frontend:${{ steps.image_tag.outputs.IMAGE_TAG }}
 
@@ -60,6 +59,7 @@ jobs:
           mkdir -p deployment-info
           echo "${{ steps.image_tag.outputs.IMAGE_TAG }}" > deployment-info/image_tag.txt
           echo "${{ steps.image_tag.outputs.BRANCH_NAME }}" > deployment-info/branch_name.txt
+          
       - name: Upload deployment artifact
         uses: actions/upload-artifact@v4
         with:

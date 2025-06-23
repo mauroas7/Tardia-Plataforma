@@ -19,14 +19,10 @@ spec:
     spec:
       containers:
       - name: frontend
-        image: nginx:alpine
+        image: YOUR_DOCKER_REGISTRY/frontend:PLACEHOLDER_TAG
+        imagePullPolicy: Always 
         ports:
         - containerPort: 80
-        volumeMounts:
-        - name: frontend-files
-          mountPath: /usr/share/nginx/html
-        - name: nginx-config
-          mountPath: /etc/nginx/conf.d
         resources:
           requests:
             memory: "64Mi"
@@ -34,13 +30,7 @@ spec:
           limits:
             memory: "128Mi"
             cpu: "100m"
-      volumes:
-      - name: frontend-files
-        configMap:
-          name: frontend-files
-      - name: nginx-config
-        configMap:
-          name: nginx-config
+      restartPolicy: Always
 ---
 apiVersion: v1
 kind: Service

@@ -1,4 +1,3 @@
-# .github/workflows/cd.yml
 name: CD - Deploy to Kubernetes
 
 on:
@@ -39,25 +38,47 @@ jobs:
       - name: Apply Kubernetes Namespace
         run: kubectl apply -f k8s/namespace.yaml
 
+      - name: Apply RBAC Configuration
+        run: kubectl apply -f k8s/rbac.yaml
+
       - name: Create/Update Kubernetes Secrets
         env:
-          JWT_SECRET: ${{ secrets.JWT_SECRET }}
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
           WEATHER_API_KEY: ${{ secrets.WEATHER_API_KEY }}
           NEWS_API_KEY: ${{ secrets.NEWS_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          kubectl create secret generic app-secrets --from-literal=jwt-secret="$JWT_SECRET" --from-literal=mongodb-uri="$MONGODB_URI" --namespace=bot-platform --dry-run=client -o yaml | kubectl apply -f -
-          kubectl create secret generic bot-secrets --from-literal=weather-api-key="$WEATHER_API_KEY" --from-literal=news-api-key="$NEWS_API_KEY" --from-literal=gemini-api-key="$GEMINI_API_KEY" --namespace=bot-platform --dry-run=client -o yaml | kubectl apply -f -
+          # Crear bot-secrets con las API keys
+          kubectl create secret generic bot-secrets \
+            --from-literal=weather-api-key="$WEATHER_API_KEY" \
+            --from-literal=news-api-key="$NEWS_API_KEY" \
+            --from-literal=gemini-api-key="$GEMINI_API_KEY" \
+            --namespace=bot-platform \
+            --dry-run=client -o yaml | kubectl apply -f -
+          
+          # Crear app-secrets con MongoDB (sin JWT por ahora)
+          kubectl create secret generic app-secrets \
+            --from-literal=mongodb-uri="$MONGODB_URI" \
+            --namespace=bot-platform \
+            --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Deploy to Kubernetes
         env:
           DOCKER_REGISTRY: ${{ secrets.DOCKER_REGISTRY }}
         run: |
-          sed -i "s|image: YOUR_DOCKER_REGISTRY/backend:PLACEHOLDER_TAG|image: $DOCKER_REGISTRY/backend:${{ steps.deploy_info.outputs.IMAGE_TAG }}|g" k8s/deployment.yaml
-          sed -i "s|image: YOUR_DOCKER_REGISTRY/frontend:PLACEHOLDER_TAG|image: $DOCKER_REGISTRY/frontend:${{ steps.deploy_info.outputs.IMAGE_TAG }}|g" k8s/frontend.yaml
-          kubectl apply -f k8s/deployment.yaml
-          kubectl apply -f k8s/frontend.yaml
+          # Crear copias temporales para no modificar los originales
+          cp k8s/deployment.yaml k8s/deployment-temp.yaml
+          cp k8s/frontend.yaml k8s/frontend-temp.yaml
+          
+          # Reemplazar placeholders
+          sed -i "s|YOUR_DOCKER_REGISTRY|$DOCKER_REGISTRY|g" k8s/deployment-temp.yaml
+          sed -i "s|PLACEHOLDER_TAG|${{ steps.deploy_info.outputs.IMAGE_TAG }}|g" k8s/deployment-temp.yaml
+          sed -i "s|YOUR_DOCKER_REGISTRY|$DOCKER_REGISTRY|g" k8s/frontend-temp.yaml
+          sed -i "s|PLACEHOLDER_TAG|${{ steps.deploy_info.outputs.IMAGE_TAG }}|g" k8s/frontend-temp.yaml
+          
+          # Aplicar deployments
+          kubectl apply -f k8s/deployment-temp.yaml
+          kubectl apply -f k8s/frontend-temp.yaml
 
       - name: Wait for deployments
         run: |
