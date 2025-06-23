@@ -37,19 +37,44 @@ function setupEventListeners() {
 
   // Modal close on background click
   document.getElementById("createBotModal").addEventListener("click", function (e) {
-    if (e.target === this) {
+    if (e.target === this || e.target.classList.contains("modal-backdrop")) {
       closeCreateBotModal()
     }
   })
+
+  // Fixed tab switching - usar event delegation
+  document.querySelector(".tabs").addEventListener("click", (e) => {
+    const tabBtn = e.target.closest(".tab-btn")
+    if (!tabBtn) return
+
+    const targetTab = tabBtn.getAttribute("data-tab")
+    switchTab(targetTab)
+  })
 }
 
-// Authentication functions
+// Fixed Authentication functions
 function switchTab(tab) {
-  document.querySelectorAll(".tab-btn").forEach((btn) => btn.classList.remove("active"))
-  document.querySelectorAll(".tab-content").forEach((content) => content.classList.remove("active"))
+  console.log("🔄 Switching to tab:", tab)
 
-  document.querySelector(`[onclick="switchTab('${tab}')"]`).classList.add("active")
-  document.getElementById(tab === "login" ? "loginForm" : "registerForm").classList.add("active")
+  // Remove active class from all tab buttons
+  document.querySelectorAll(".tab-btn").forEach((btn) => btn.classList.remove("active"))
+
+  // Remove active class from all tab contents
+  document.querySelectorAll(".tab-content").forEach((content) => {
+    content.classList.remove("active")
+  })
+
+  // Add active class to clicked tab button
+  document.querySelector(`[data-tab="${tab}"]`).classList.add("active")
+
+  // Add active class to corresponding tab content
+  const targetContent = document.querySelector(`[data-tab-content="${tab}"]`)
+  if (targetContent) {
+    // Small delay for smooth transition
+    setTimeout(() => {
+      targetContent.classList.add("active")
+    }, 50)
+  }
 }
 
 async function handleLogin(e) {
@@ -246,7 +271,7 @@ function renderBots() {
             </div>
             
             <div class="bot-services">
-                <p>Servicios:</p>
+                <p>Servicios disponibles:</p>
                 <div class="services-tags">
                     ${bot.servicios.map((service) => `<span class="service-tag">${getServiceName(service)}</span>`).join("")}
                 </div>
@@ -256,19 +281,10 @@ function renderBots() {
                 ${
                   bot.status === "active" && bot.url
                     ? `
-                    <button class="btn btn-primary btn-sm" onclick="openTelegramBot('${bot.name}')">
+                    <button class="btn btn-primary btn-sm btn-glow" onclick="openTelegramBot('${bot.name}')">
                         <i class="fas fa-external-link-alt"></i>
                         Abrir Bot
-                    </button>
-                `
-                    : ""
-                }
-                ${
-                  bot.deploy_url
-                    ? `
-                    <button class="btn btn-outline btn-sm" onclick="window.open('${bot.deploy_url}', '_blank')">
-                        <i class="fas fa-server"></i>
-                        Ver Deploy
+                        <div class="btn-shine"></div>
                     </button>
                 `
                     : ""
