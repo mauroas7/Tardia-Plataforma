@@ -1,3 +1,4 @@
+# k8s/frontend.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -19,12 +20,11 @@ spec:
     spec:
       containers:
       - name: frontend
-        image: nginx:alpine
+        # Usar un placeholder genérico que será reemplazado por el CD
+        image: YOUR_DOCKER_REGISTRY/frontend:PLACEHOLDER_TAG # Esta línea será reemplazada por el pipeline de CD
         ports:
         - containerPort: 80
         volumeMounts:
-        - name: frontend-files
-          mountPath: /usr/share/nginx/html
         - name: nginx-config
           mountPath: /etc/nginx/conf.d
         resources:
@@ -35,9 +35,6 @@ spec:
             memory: "128Mi"
             cpu: "100m"
       volumes:
-      - name: frontend-files
-        configMap:
-          name: frontend-files
       - name: nginx-config
         configMap:
           name: nginx-config

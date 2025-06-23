@@ -1,3 +1,4 @@
+# k8s/deployment.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -19,7 +20,7 @@ spec:
     spec:
       containers:
       - name: backend
-        image: cloud-bot-platform:latest
+        image: YOUR_DOCKER_REGISTRY/backend:PLACEHOLDER_TAG # Esta línea será reemplazada por el pipeline de CD
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 3000
@@ -28,8 +29,13 @@ spec:
           value: "production"
         - name: PORT
           value: "3000"
+        # --- INICIO DE LA CORRECCIÓN DE SEGURIDAD ---
         - name: MONGODB_URI
-          value: "mongodb+srv://dbUser:ProyectoTarDia987654321@tardiacluster.mg4kvzx.mongodb.net/cloud-bot-platform?retryWrites=true&w=majority&appName=TarDiaCluster"
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets # Se leerá desde el secreto 'app-secrets'
+              key: mongodb-uri   # La clave que buscará dentro del secreto
+        # --- FIN DE LA CORRECCIÓN DE SEGURIDAD ---
         - name: JWT_SECRET
           valueFrom:
             secretKeyRef:
@@ -37,6 +43,21 @@ spec:
               key: jwt-secret
         - name: KUBERNETES_NAMESPACE
           value: "bot-platform"
+        - name: WEATHER_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: bot-secrets
+              key: weather-api-key
+        - name: NEWS_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: bot-secrets
+              key: news-api-key
+        - name: GEMINI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: bot-secrets
+              key: gemini-api-key
         resources:
           requests:
             memory: "256Mi"

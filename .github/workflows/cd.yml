@@ -1,0 +1,104 @@
+# .github/workflows/cd.yml
+name: CD - Deploy to Kubernetes
+
+on:
+  workflow_call: # Este workflow es llamado por ci.yml
+    inputs:
+      image_tag:
+        required: true
+        type: string
+        description: "Docker image tag to deploy (e.g., develop-sha, test-sha, latest)"
+      branch_name:
+        required: true
+        type: string
+        description: "Name of the branch that triggered the CI (e.g., develop, test, main)"
+    secrets:
+      DOCKER_REGISTRY:
+        required: true
+      DOCKER_USERNAME:
+        required: true
+      DOCKER_PASSWORD:
+        required: true
+      KUBE_CONFIG_BASE64:
+        required: true
+      MONGODB_URI:
+        required: true
+      JWT_SECRET:
+        required: true
+      WEATHER_API_KEY:
+        required: true
+      NEWS_API_KEY:
+        required: true
+      GEMINI_API_KEY:
+        required: true
+
+env:
+  KUBERNETES_NAMESPACE: bot-platform # Tu namespace de Kubernetes
+  DOCKER_REGISTRY: ${{ secrets.DOCKER_REGISTRY }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: # Define el entorno de despliegue basado en la rama
+      name: ${{ inputs.branch_name == 'main' && 'production' || (inputs.branch_name == 'test' && 'staging') || 'development' }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Kubeconfig
+        uses: azure/k8s-set-context@v3
+        with:
+          kubeconfig: ${{ secrets.KUBE_CONFIG_BASE64 }}
+
+      - name: Apply Kubernetes Namespace
+        run: kubectl apply -f k8s/namespace.yaml
+
+      - name: Apply Kubernetes RBAC
+        run: kubectl apply -f k8s/rbac.yaml
+
+      - name: Create/Update Kubernetes Secrets
+        run: |
+          # --- INICIO DE LA CORRECCIÓN DE SEGURIDAD ---
+          # Ahora se inyecta MONGODB_URI en el secreto 'app-secrets'
+          kubectl create secret generic app-secrets \
+            --from-literal=jwt-secret="${{ secrets.JWT_SECRET }}" \
+            --from-literal=mongodb-uri="${{ secrets.MONGODB_URI }}" \
+            --namespace=${{ env.KUBERNETES_NAMESPACE }} \
+            --dry-run=client -o yaml | kubectl apply -f -
+          # --- FIN DE LA CORRECCIÓN DE SEGURIDAD ---
+
+          kubectl create secret generic bot-secrets \
+            --from-literal=weather-api-key="${{ secrets.WEATHER_API_KEY }}" \
+            --from-literal=news-api-key="${{ secrets.NEWS_API_KEY }}" \
+            --from-literal=gemini-api-key="${{ secrets.GEMINI_API_KEY }}" \
+            --namespace=${{ env.KUBERNETES_NAMESPACE }} \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Create/Update Nginx ConfigMap
+        run: |
+          kubectl create configmap nginx-config \
+            --from-file=nginx.conf \
+            --namespace=${{ env.KUBERNETES_NAMESPACE }} \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Deploy Backend to Kubernetes
+        run: |
+          # Reemplazar la imagen en el YAML antes de aplicar
+          sed -i "s|image: YOUR_DOCKER_REGISTRY/backend:PLACEHOLDER_TAG|image: ${{ env.DOCKER_REGISTRY }}/backend:${{ inputs.image_tag }}|g" k8s/deployment.yaml
+          kubectl apply -f k8s/deployment.yaml
+
+      - name: Deploy Frontend to Kubernetes
+        run: |
+          # Reemplazar la imagen en el YAML antes de aplicar
+          sed -i "s|image: YOUR_DOCKER_REGISTRY/frontend:PLACEHOLDER_TAG|image: ${{ env.DOCKER_REGISTRY }}/frontend:${{ inputs.image_tag }}|g" k8s/frontend.yaml
+          kubectl apply -f k8s/frontend.yaml
+
+      - name: Wait for Backend Deployment to be ready
+        run: kubectl wait --for=condition=available --timeout=300s deployment/backend -n ${{ env.KUBERNETES_NAMESPACE }}
+
+      - name: Wait for Frontend Deployment to be ready
+        run: kubectl wait --for=condition=available --timeout=180s deployment/frontend -n ${{ env.KUBERNETES_NAMESPACE }}
+
+      - name: Show Deployment Status
+        run: kubectl get all -n ${{ env.KUBERNETES_NAMESPACE }}
