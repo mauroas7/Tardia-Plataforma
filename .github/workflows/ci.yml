@@ -15,7 +15,6 @@ env:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -34,13 +33,15 @@ jobs:
         run: |
           BRANCH_NAME=$(echo "${{ github.ref_name }}")
           COMMIT_SHA_SHORT=$(echo "${{ github.sha }}" | cut -c1-7)
+          IMAGE_TAG=""
           if [ "$BRANCH_NAME" == "main" ]; then
-            echo "IMAGE_TAG=latest" >> $GITHUB_OUTPUT
+            IMAGE_TAG="latest"
           elif [ "$BRANCH_NAME" == "test" ]; then
-            echo "IMAGE_TAG=test-$COMMIT_SHA_SHORT" >> $GITHUB_OUTPUT
+            IMAGE_TAG="test-$COMMIT_SHA_SHORT"
           else
-            echo "IMAGE_TAG=develop-$COMMIT_SHA_SHORT" >> $GITHUB_OUTPUT
+            IMAGE_TAG="develop-$COMMIT_SHA_SHORT"
           fi
+          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_OUTPUT
           echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_OUTPUT
 
       - name: Build and push Backend image
@@ -53,13 +54,13 @@ jobs:
           docker build -t ${{ env.DOCKER_REGISTRY }}/frontend:${{ steps.image_tag.outputs.IMAGE_TAG }} ./frontend
           docker push ${{ env.DOCKER_REGISTRY }}/frontend:${{ steps.image_tag.outputs.IMAGE_TAG }}
 
-      # --- INICIO DE LA CORRECCIÓN ---
-      # Usamos github.sha para referenciar la versión exacta del workflow
-      # en el mismo commit, eliminando cualquier ambigüedad de ramas.
-      - name: Call CD Workflow
-        uses: ./.github/workflows/cd.yml@${{ github.sha }}
+      - name: Create deployment artifact
+        run: |
+          mkdir -p deployment-info
+          echo "${{ steps.image_tag.outputs.IMAGE_TAG }}" > deployment-info/image_tag.txt
+          echo "${{ steps.image_tag.outputs.BRANCH_NAME }}" > deployment-info/branch_name.txt
+      - name: Upload deployment artifact
+        uses: actions/upload-artifact@v4
         with:
-          image_tag: ${{ steps.image_tag.outputs.IMAGE_TAG }}
-          branch_name: ${{ steps.image_tag.outputs.BRANCH_NAME }}
-        secrets: inherit
-      # --- FIN DE LA CORRECCIÓN ---
+          name: deployment-info
+          path: deployment-info/
