@@ -1,65 +1,62 @@
-# .github/workflows/ci.yml
-name: CI - Build and Push Images
+    # .github/workflows/ci.yml
+    name: CI - Build and Push Images
 
-on:
-  push:
-    branches:
-      - develop
-      - test
-      - main
-  workflow_dispatch: # Permite ejecutar el workflow manualmente
+    on:
+      push:
+        branches:
+          - develop
+          - test
+          - main
+      workflow_dispatch:
 
-env:
-  DOCKER_REGISTRY: ${{ secrets.DOCKER_REGISTRY }} # Tu registro Docker (ej. docker.io/tu_usuario)
+    env:
+      DOCKER_REGISTRY: ${{ secrets.DOCKER_REGISTRY }}
 
-jobs:
-  build-and-push:
-    runs-on: ubuntu-latest
+    jobs:
+      build-and-push:
+        runs-on: ubuntu-latest
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+        steps:
+          - name: Checkout code
+            uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+          - name: Set up Docker Buildx
+            uses: docker/setup-buildx-action@v3
 
-      - name: Log in to Docker Registry
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          - name: Log in to Docker Registry
+            uses: docker/login-action@v3
+            with:
+              username: ${{ secrets.DOCKER_USERNAME }}
+              password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Determine image tag
-        id: image_tag
-        run: |
-          BRANCH_NAME=$(echo "${{ github.ref }}" | sed 's/refs\/heads\///g')
-          COMMIT_SHA_SHORT=$(echo "${{ github.sha }}" | cut -c1-7)
-          if [ "$BRANCH_NAME" == "main" ]; then
-            echo "IMAGE_TAG=latest" >> $GITHUB_OUTPUT
-          elif [ "$BRANCH_NAME" == "test" ]; then
-            echo "IMAGE_TAG=test-$COMMIT_SHA_SHORT" >> $GITHUB_OUTPUT
-          else # develop branch
-            echo "IMAGE_TAG=develop-$COMMIT_SHA_SHORT" >> $GITHUB_OUTPUT
-          fi
-          echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_OUTPUT # Exportar nombre de la rama para el CD
+          - name: Determine image tag
+            id: image_tag
+            run: |
+              BRANCH_NAME=$(echo "${{ github.ref_name }}")
+              COMMIT_SHA_SHORT=$(echo "${{ github.sha }}" | cut -c1-7)
+              if [ "$BRANCH_NAME" == "main" ]; then
+                echo "IMAGE_TAG=latest" >> $GITHUB_OUTPUT
+              elif [ "$BRANCH_NAME" == "test" ]; then
+                echo "IMAGE_TAG=test-$COMMIT_SHA_SHORT" >> $GITHUB_OUTPUT
+              else
+                echo "IMAGE_TAG=develop-$COMMIT_SHA_SHORT" >> $GITHUB_OUTPUT
+              fi
+              echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_OUTPUT
 
-      - name: Build and push Backend image
-        run: |
-          docker build -t ${{ env.DOCKER_REGISTRY }}/backend:${{ steps.image_tag.outputs.IMAGE_TAG }} ./backend
-          docker push ${{ env.DOCKER_REGISTRY }}/backend:${{ steps.image_tag.outputs.IMAGE_TAG }}
+          - name: Build and push Backend image
+            run: |
+              docker build -t ${{ env.DOCKER_REGISTRY }}/backend:${{ steps.image_tag.outputs.IMAGE_TAG }} ./backend
+              docker push ${{ env.DOCKER_REGISTRY }}/backend:${{ steps.image_tag.outputs.IMAGE_TAG }}
 
-      - name: Build and push Frontend image
-        run: |
-          docker build -t ${{ env.DOCKER_REGISTRY }}/frontend:${{ steps.image_tag.outputs.IMAGE_TAG }} ./frontend
-          docker push ${{ env.DOCKER_REGISTRY }}/frontend:${{ steps.image_tag.outputs.IMAGE_TAG }}
+          - name: Build and push Frontend image
+            run: |
+              docker build -t ${{ env.DOCKER_REGISTRY }}/frontend:${{ steps.image_tag.outputs.IMAGE_TAG }} ./frontend
+              docker push ${{ env.DOCKER_REGISTRY }}/frontend:${{ steps.image_tag.outputs.IMAGE_TAG }}
 
-      # --- INICIO DE LA CORRECCIÓN ---
-      - name: Call CD Workflow
-        uses: ./.github/workflows/cd.yml@${{ github.ref_name }} # La variable github.ref_name está correcta aquí, el error estaba en la sintaxis de 'with'
-        with:
-          image_tag: ${{ steps.image_tag.outputs.IMAGE_TAG }}
-          branch_name: ${{ steps.image_tag.outputs.BRANCH_NAME }}
-        # 'secrets: inherit' es la forma correcta y moderna de pasar TODOS los secretos
-        # al workflow llamado, en lugar de listarlos uno por uno.
-        secrets: inherit
-      # --- FIN DE LA CORRECCIÓN ---
+          - name: Call CD Workflow
+            uses: ./.github/workflows/cd.yml@main
+            with:
+              image_tag: ${{ steps.image_tag.outputs.IMAGE_TAG }}
+              branch_name: ${{ steps.image_tag.outputs.BRANCH_NAME }}
+            secrets: inherit
+    
