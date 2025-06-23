@@ -49,15 +49,11 @@ jobs:
           docker build -t ${{ env.DOCKER_REGISTRY }}/backend:${{ steps.image_tag.outputs.IMAGE_TAG }} ./backend
           docker push ${{ env.DOCKER_REGISTRY }}/backend:${{ steps.image_tag.outputs.IMAGE_TAG }}
 
-      # --- INICIO DE LA CORRECCIÓN ---
       - name: Build and push Frontend image
         run: |
-          # Cambiamos el comando de construcción:
-          # -f ./frontend/Dockerfile -> Especifica qué Dockerfile usar.
-          # . -> Le dice a Docker que el contexto es la raíz del proyecto.
+          # Corrección: Se especifica la ruta del Dockerfile (-f) y el contexto de build (.)
           docker build -t ${{ env.DOCKER_REGISTRY }}/frontend:${{ steps.image_tag.outputs.IMAGE_TAG }} -f ./frontend/Dockerfile .
           docker push ${{ env.DOCKER_REGISTRY }}/frontend:${{ steps.image_tag.outputs.IMAGE_TAG }}
-      # --- FIN DE LA CORRECCIÓN ---
 
       - name: Create deployment artifact
         run: |
