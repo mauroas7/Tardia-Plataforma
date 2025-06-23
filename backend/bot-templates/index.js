@@ -1,3 +1,8 @@
+// Guardar historiales de IA en memoria { chatId: historial[] }
+const historialesIA = new Map();
+import "dotenv/config";
+
+
 import express from "express"
 import TelegramBot from "node-telegram-bot-api"
 import dotenv from "dotenv"
@@ -102,16 +107,17 @@ bot.on("callback_query", async (callbackQuery) => {
 
   // --- CLIMA ---
   if (data === "clima_diario") {
-    const offset = zonasUsuarios[chatId]
-    if (offset === undefined) {
-      bot.sendMessage(chatId, "⚠️ Primero seleccioná tu zona horaria con /start.")
-      return
-    }
-
-    const horaLocal = 8 // 8:00 AM local
-    programarClimaUTC(chatId, bot, offset, horaLocal)
-    bot.sendMessage(chatId, "✅ ¡Listo! Vas a recibir el clima todos los días a las 8:00 AM.")
+  const offset = zonasUsuarios[chatId]
+  if (offset === undefined) {
+    bot.sendMessage(chatId, "⚠️ Primero seleccioná tu zona horaria con /start.")
+    return
   }
+      // Definimos hora y minutos por separado
+      const horaLocal = 3 // Hora: 18
+      const minutoLocal = 42 // Minuto: 55
+      programarClimaUTC(chatId, bot, offset, horaLocal, minutoLocal) // Pasamos el minuto como nuevo argumento
+      bot.sendMessage(chatId, `✅ ¡Listo! Vas a recibir el clima todos los días a las ${horaLocal}:${minutoLocal}.`)
+    }
 
   // --- NOTICIAS ---
   if (data === "noticias_diarias") {
@@ -140,7 +146,7 @@ if (services.includes("ia")) {
     if (texto.startsWith("/") || !texto) return
 
     bot.sendMessage(chatId, "🤖 Pensando...")
-    responderConIA(chatId, bot, texto)
+    responderConIA(chatId, bot, texto, historialesIA)
   })
 }
 

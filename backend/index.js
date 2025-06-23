@@ -413,24 +413,33 @@ async function createBotAsync(bot) {
 }
 
 
-// Función para generar archivo .env para el bot
+// Reemplaza tu función generateBotEnvFile con esta versión corregida
+
 function generateBotEnvFile(bot) {
+  // 1. Lee las claves de API desde el entorno del backend.
+  //    Usa los nombres exactos con guiones que vimos con el comando `printenv`.
+  const weatherKey = process.env['weather-api-key'] || "";
+  const newsKey = process.env['news-api-key'] || "";
+  const geminiKey = process.env['gemini-api-key'] || "";
+
+  // 2. Genera el contenido del archivo .env para el nuevo bot.
+  //    Aquí escribimos las variables en el formato estándar (mayúsculas) que el bot leerá.
   return `# Configuración del Bot ${bot.name}
 BOT_NAME=${bot.name}
 BOT_TOKEN=${bot.token}
 SERVICES=${bot.servicios.join(",")}
 PORT=3000
 
-# APIs (configurar según necesidad)
-WEATHER_API_KEY=
-NEWS_API_KEY=
-GEMINI_API_KEY=
+# APIs inyectadas por la plataforma
+WEATHER_API_KEY=${weatherKey}
+NEWS_API_KEY=${newsKey}
+GEMINI_API_KEY=${geminiKey}
 WEATHER_CITY=Buenos Aires
 
 # Configuración de la plataforma
 PLATFORM_VERSION=1.0.0
 CREATED_AT=${new Date().toISOString()}
-`
+`;
 }
 
 // Endpoint para eliminar bot con mejor logging

@@ -4,7 +4,7 @@ import cron from "node-cron"
 const tareasProgramadas = new Set()
 
 // 🟡 Programa el clima según zona horaria del usuario
-export function programarClimaUTC(chatId, bot, offset, horaLocal) {
+export function programarClimaUTC(chatId, bot, offset, horaLocal, minutoLocal = 0) {
   const utcHour = (horaLocal - offset + 24) % 24
   const tareaId = `clima-${chatId}`
 
@@ -16,7 +16,7 @@ export function programarClimaUTC(chatId, bot, offset, horaLocal) {
   console.log(`⏰ Programando clima para las ${utcHour}:00 UTC (chat ${chatId})`)
   tareasProgramadas.add(tareaId)
 
-  cron.schedule(`0 ${utcHour} * * *`, async () => {
+  cron.schedule(` ${minutoLocal} ${utcHour} * * *`, async () => {
     const ciudad = process.env.WEATHER_CITY || "Buenos Aires"
     const apiKey = process.env.WEATHER_API_KEY
 

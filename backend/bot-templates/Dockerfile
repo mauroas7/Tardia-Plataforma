@@ -12,6 +12,7 @@ RUN addgroup -g 1001 -S botuser && \
 
 # Copiar archivos de configuración
 COPY package*.json ./
+COPY .env .
 
 # Instalar dependencias
 RUN npm ci --only=production && npm cache clean --force

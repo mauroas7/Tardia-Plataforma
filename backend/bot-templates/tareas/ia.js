@@ -1,16 +1,8 @@
-import { fetch } from "undici"
+import { fetch } from "undici";
 
-// 🧠 Integración con IA (Gemini)
-export async function responderConIA(chatId, bot, pregunta) {
-  const apiKey = process.env.GEMINI_API_KEY
-
-  if (!apiKey) {
-    bot.sendMessage(chatId, "❌ Servicio de IA no disponible.")
-    return
-  }
-
-  const botName = process.env.BOT_NAME || "TarDía"
-  const contextoBase = [
+// Esta función inicializa el historial con el prompt del sistema
+function inicializarHistorial(botName) {
+  return [
     {
       role: "user",
       parts: [
@@ -27,21 +19,50 @@ export async function responderConIA(chatId, bot, pregunta) {
         },
       ],
     },
-    {
-      role: "user",
-      parts: [{ text: pregunta }],
-    },
-  ]
+  ];
+}
+
+// 🧠 Integración con IA (Gemini) con memoria
+export async function responderConIA(chatId, bot, pregunta, historialesIA) {
+  const apiKey = process.env.GEMINI_API_KEY;
+
+  if (!apiKey) {
+    bot.sendMessage(chatId, "❌ Servicio de IA no disponible.");
+    return;
+  }
+
+  const botName = process.env.BOT_NAME || "TarDía";
+
+  // 1. Obtener o inicializar el historial de esta conversación
+  let historial = historialesIA.get(chatId);
+  if (!historial) {
+    historial = inicializarHistorial(botName);
+    historialesIA.set(chatId, historial);
+  }
+
+  // 2. Añadir la nueva pregunta del usuario al historial
+  historial.push({
+    role: "user",
+    parts: [{ text: pregunta }],
+  });
+
+  // 3. (Opcional pero recomendado) Limitar el tamaño del historial para no exceder límites
+  // Mantenemos el prompt del sistema y los últimos 10 mensajes (5 idas y vueltas)
+  const MAX_HISTORY = 12; // 2 de prompt + 10 de conversación
+  if (historial.length > MAX_HISTORY) {
+    // Quitamos los mensajes más antiguos de la conversación, pero no el prompt inicial
+    historial.splice(2, historial.length - MAX_HISTORY);
+  }
 
   const body = {
-    contents: contextoBase,
+    contents: historial, // Usamos el historial completo en la petición
     generationConfig: {
       temperature: 0.7,
       topK: 40,
       topP: 0.95,
       maxOutputTokens: 1024,
     },
-  }
+  };
 
   try {
     const res = await fetch(
@@ -51,22 +72,33 @@ export async function responderConIA(chatId, bot, pregunta) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       },
-    )
+    );
 
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-    const data = await res.json()
-    const respuesta = data.candidates?.[0]?.content?.parts?.[0]?.text
+    const data = await res.json();
+    const respuesta = data.candidates?.[0]?.content?.parts?.[0]?.text;
 
     if (respuesta) {
-      await bot.sendMessage(chatId, respuesta)
-      console.log(`✅ Respuesta IA enviada a chat ${chatId}`)
+      // 4. Añadir la respuesta del modelo al historial para la próxima vez
+      historial.push({
+        role: "model",
+        parts: [{ text: respuesta }],
+      });
+      historialesIA.set(chatId, historial); // Actualizamos el historial en el mapa
+
+      await bot.sendMessage(chatId, respuesta);
+      console.log(`✅ Respuesta IA enviada a chat ${chatId}`);
     } else {
-      bot.sendMessage(chatId, "❌ No pude generar una respuesta en este momento.")
+      bot.sendMessage(chatId, "❌ No pude generar una respuesta en este momento.");
+      // Quitamos la última pregunta del usuario si el modelo no respondió, para que pueda reintentar
+      historial.pop();
     }
   } catch (err) {
-    console.error("❌ Error IA:", err)
-    bot.sendMessage(chatId, "❌ Error al generar respuesta. Inténtalo de nuevo.")
+    console.error("❌ Error IA:", err);
+    bot.sendMessage(chatId, "❌ Error al generar respuesta. Inténtalo de nuevo.");
+    // Quitamos la última pregunta del usuario si hubo un error en la llamada
+    historial.pop();
   }
 }
 
@@ -80,4 +112,4 @@ export const iaConfig = {
   requiresApiKey: true,
   apiKeyName: "GEMINI_API_KEY",
   isConversational: true,
-}
+};
