@@ -3,7 +3,7 @@ let currentUser = null
 let bots = []
 
 // API Configuration - Detectar automáticamente la URL base
-const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8080/api";
+const API_BASE_URL = "https://2b4d-148-222-203-153.ngrok-free.app/api";
 
 // Initialize app
 document.addEventListener("DOMContentLoaded", () => {
