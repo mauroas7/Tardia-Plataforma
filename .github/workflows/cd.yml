@@ -1,5 +1,6 @@
 name: CD - Deploy to Kubernetes
 
+
 on:
   workflow_run:
     workflows: ["CI - Build and Push Images"]
@@ -12,7 +13,7 @@ on:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
 
     steps:
@@ -34,10 +35,19 @@ jobs:
           echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_OUTPUT
           echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_OUTPUT
 
-      - name: Set up Kubeconfig
-        uses: azure/k8s-set-context@v3
-        with:
-          kubeconfig: ${{ secrets.KUBE_CONFIG_BASE64 }}
+      - name: Set up Kubeconfig Manually and Verify
+        run: |
+          # Creamos el directorio .kube en el home del runner, si no existe
+          mkdir -p $HOME/.kube
+          
+          # Decodificamos el secreto (que viene de GitHub Secrets) y lo escribimos
+          # directamente en el archivo de configuración que kubectl busca por defecto.
+          echo "${{ secrets.KUBE_CONFIG_BASE64 }}" | base64 --decode > $HOME/.kube/config
+          
+          echo "Kubeconfig file created. Verifying connection..."
+          # Ejecutamos un comando simple para probar la conexión inmediatamente.
+          # Si este comando funciona, todos los demás también lo harán.
+          kubectl cluster-info
 
       - name: Apply Kubernetes Namespace
         run: kubectl apply -f k8s/namespace.yaml
