@@ -52,6 +52,8 @@ jobs:
           WEATHER_API_KEY: ${{ secrets.WEATHER_API_KEY }}
           NEWS_API_KEY: ${{ secrets.NEWS_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+          DOCKER_PAT: ${{ secrets.DOCKER_PAT }}
         run: |
           # Crear bot-secrets con las API keys
           kubectl create secret generic bot-secrets \
@@ -67,6 +69,13 @@ jobs:
             --from-literal=jwt-secret="$JWT_SECRET" \
             --namespace=bot-platform \
             --dry-run=client -o yaml | kubectl apply -f -
+
+          kubectl create secret docker-registry regcred \
+            --docker-server=https://index.docker.io/v1/ \
+            --docker-username="$DOCKER_USERNAME" \
+            --docker-password="$DOCKER_PAT" \
+            --namespace=bot-platform \
+            --dry-run=client -o yaml | kubectl apply -f - 
 
       - name: Create App ConfigMaps
         run: |
