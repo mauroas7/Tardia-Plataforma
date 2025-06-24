@@ -3,7 +3,7 @@ let currentUser = null
 let bots = []
 
 // API Configuration - Detectar automáticamente la URL base
-const API_BASE_URL = "https://2b4d-148-222-203-153.ngrok-free.app/api";
+const API_BASE_URL = "https://28b8-148-222-203-153.ngrok-free.app/api";
 
 // Initialize app
 document.addEventListener("DOMContentLoaded", () => {
