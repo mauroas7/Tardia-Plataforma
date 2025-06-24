@@ -9,6 +9,9 @@ const path = require("path")
 const { exec } = require("child_process")
 const { promisify } = require("util")
 
+// Agregar después de las importaciones existentes
+const crypto = require("crypto")
+
 // Enhanced logging con más detalles
 const log = (level, message, data = null) => {
   const timestamp = new Date().toISOString()
@@ -54,10 +57,21 @@ const MONGODB_URI =
   "mongodb+srv://dbUser:ProyectoTarDia987654321@tardiacluster.mg4kvzx.mongodb.net/cloud-bot-platform?retryWrites=true&w=majority&appName=TarDiaCluster"
 const KUBERNETES_NAMESPACE = process.env.KUBERNETES_NAMESPACE || "bot-platform"
 
+// Configuración de email
+const RESEND_API_KEY = process.env.RESEND_API_KEY || "re_fvAWpSwK_foXuJ8FmPHMVXpmmBfspvMRS"
+const VERIFIED_EMAIL = "testdesarrollo2025@gmail.com" // Tu email verificado en Resend
+const FROM_EMAIL = "onboarding@resend.dev" // Email por defecto de Resend
+
+// 🔧 CONFIGURACIÓN PARA MANEJAR PORT-FORWARD
+const BASE_URL = process.env.BASE_URL || "http://localhost:8080" // URL base para enlaces
+
 log("info", "Starting Cloud Bot Platform API", {
   port: PORT,
+  baseUrl: BASE_URL,
   mongoUri: MONGODB_URI.replace(/\/\/.*@/, "//***:***@"), // Hide credentials in logs
   kubernetesNamespace: KUBERNETES_NAMESPACE,
+  resendConfigured: RESEND_API_KEY ? "Yes" : "No",
+  verifiedEmail: VERIFIED_EMAIL,
   nodeVersion: process.version,
   platform: process.platform,
   workingDirectory: process.cwd(),
@@ -111,10 +125,13 @@ mongoose.connection.on("reconnected", () => {
   log("info", "MongoDB reconnected")
 })
 
-// User Schema
+// User Schema - Actualizado con verificación de email
 const userSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true },
+  email_verified: { type: Boolean, default: false },
+  verification_token: { type: String },
+  verification_expires: { type: Date },
   created_at: { type: Date, default: Date.now },
 })
 
@@ -128,7 +145,6 @@ const botSchema = new mongoose.Schema({
   servicios: [{ type: String }],
   status: { type: String, enum: ["creating", "active", "error", "stopped"], default: "creating" },
   url: String,
-  deploy_url: String,
   repo_url: String,
   kubernetes_deployment: String,
   error_message: String, // Agregar campo para errores
@@ -136,6 +152,91 @@ const botSchema = new mongoose.Schema({
 })
 
 const Bot = mongoose.model("Bot", botSchema)
+
+// Agregar después del esquema de Bot
+const passwordResetSchema = new mongoose.Schema({
+  user_id: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+  token: { type: String, required: true },
+  expires_at: { type: Date, required: true },
+  used: { type: Boolean, default: false },
+  created_at: { type: Date, default: Date.now },
+})
+
+const PasswordReset = mongoose.model("PasswordReset", passwordResetSchema)
+
+// 🔧 FUNCIÓN PARA GENERAR URL BASE CORRECTA
+function getBaseUrl(req) {
+  // Si hay BASE_URL configurada, usarla (para port-forward)
+  if (BASE_URL && BASE_URL !== "auto") {
+    return BASE_URL
+  }
+
+  // Si no, construir desde el request
+  const protocol = req.protocol
+  const host = req.get("host")
+  return `${protocol}://${host}`
+}
+
+// Función para enviar emails con Resend (mejorada para manejar limitaciones)
+async function sendEmail(to, subject, html) {
+  if (!RESEND_API_KEY) {
+    log("warn", "Resend API key not configured, skipping email", { to, subject })
+    return { success: false, error: "Email service not configured" }
+  }
+
+  // En modo testing, solo enviar a email verificado
+  const isTestingMode = !process.env.RESEND_DOMAIN_VERIFIED
+  if (isTestingMode && to !== VERIFIED_EMAIL) {
+    log("warn", "Testing mode: Email not sent to unverified address", {
+      to,
+      verifiedEmail: VERIFIED_EMAIL,
+      message: "In testing mode, emails can only be sent to verified address",
+    })
+
+    // Para testing, simular que se envió correctamente
+    // En producción, esto debería fallar o redirigir al email verificado
+    return {
+      success: false,
+      error: `Testing mode: Can only send to ${VERIFIED_EMAIL}`,
+      isTestingLimitation: true,
+    }
+  }
+
+  try {
+    log("info", "Sending email via Resend", { to, subject, isTestingMode })
+
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${RESEND_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: FROM_EMAIL,
+        to: [to],
+        subject: subject,
+        html: html,
+      }),
+    })
+
+    const responseData = await response.json()
+
+    if (response.ok) {
+      log("info", "Email sent successfully", { to, messageId: responseData.id })
+      return { success: true, messageId: responseData.id }
+    } else {
+      log("error", "Failed to send email", {
+        to,
+        status: response.status,
+        error: responseData,
+      })
+      return { success: false, error: responseData }
+    }
+  } catch (error) {
+    log("error", "Email service error", { to, error: error.message })
+    return { success: false, error: error.message }
+  }
+}
 
 // Authentication middleware
 const authenticateToken = (req, res, next) => {
@@ -165,6 +266,12 @@ app.get("/health", (req, res) => {
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     mongodb: mongoose.connection.readyState === 1 ? "connected" : "disconnected",
+    email: {
+      resendConfigured: !!RESEND_API_KEY,
+      verifiedEmail: VERIFIED_EMAIL,
+      testingMode: !process.env.RESEND_DOMAIN_VERIFIED,
+    },
+    baseUrl: BASE_URL,
     memory: process.memoryUsage(),
     version: "1.0.0",
     environment: process.env.NODE_ENV || "development",
@@ -195,6 +302,12 @@ app.get("/api/debug", authenticateToken, async (req, res) => {
       kubernetes: {
         namespace: KUBERNETES_NAMESPACE,
       },
+      email: {
+        resendConfigured: !!RESEND_API_KEY,
+        verifiedEmail: VERIFIED_EMAIL,
+        testingMode: !process.env.RESEND_DOMAIN_VERIFIED,
+      },
+      baseUrl: getBaseUrl(req),
     }
 
     res.json(debugInfo)
@@ -217,16 +330,158 @@ app.post("/api/auth/register", async (req, res) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 12)
-    const user = new User({ email, password: hashedPassword })
+
+    // Generar token de verificación
+    const verificationToken = crypto.randomBytes(32).toString("hex")
+    const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 horas
+
+    const user = new User({
+      email,
+      password: hashedPassword,
+      verification_token: verificationToken,
+      verification_expires: verificationExpires,
+      email_verified: false,
+    })
     await user.save()
 
-    log("info", "User registered successfully", { email, userId: user._id })
-    res.status(201).json({ message: "Usuario creado exitosamente" })
+    // 🔧 GENERAR URL DE VERIFICACIÓN CON BASE_URL CORRECTA
+    const baseUrl = getBaseUrl(req)
+    const verificationUrl = `${baseUrl}/verify-email?token=${verificationToken}`
+
+    log("info", "Generated verification URL", {
+      baseUrl,
+      verificationUrl,
+      requestHost: req.get("host"),
+      requestProtocol: req.protocol,
+    })
+
+    const emailResult = await sendEmail(
+      email,
+      "Verifica tu cuenta - TarDia Bot Platform",
+      `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+            <h1 style="color: white; margin: 0;">🤖 TarDia Bot Platform</h1>
+          </div>
+          <div style="background: white; padding: 30px; border-radius: 0 0 10px 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+            <h2 style="color: #2d3748; margin-bottom: 20px;">¡Bienvenido a TarDia Bot Platform!</h2>
+            <p style="color: #718096; line-height: 1.6; margin-bottom: 25px;">
+              Gracias por registrarte. Para completar tu registro y comenzar a crear bots de Telegram, 
+              necesitas verificar tu dirección de email.
+            </p>
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${verificationUrl}" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: 600; display: inline-block;">
+                Verificar Email
+              </a>
+            </div>
+            <p style="color: #718096; font-size: 14px; line-height: 1.5;">
+              Este enlace expirará en 24 horas por seguridad.<br>
+              Si no te registraste en nuestra plataforma, puedes ignorar este email.
+            </p>
+            <p style="color: #a0aec0; font-size: 12px; margin-top: 20px;">
+              Si el botón no funciona, copia y pega este enlace en tu navegador:<br>
+              <span style="word-break: break-all;">${verificationUrl}</span>
+            </p>
+            <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 25px 0;">
+            <p style="color: #a0aec0; font-size: 12px; text-align: center;">
+              © 2024 TarDia Bot Platform. Todos los derechos reservados.
+            </p>
+          </div>
+        </div>
+      `,
+    )
+
+    log("info", "User registered successfully", {
+      email,
+      userId: user._id,
+      emailSent: emailResult.success,
+      emailError: emailResult.error || null,
+      isTestingLimitation: emailResult.isTestingLimitation || false,
+      verificationUrl,
+    })
+
+    // Mensaje diferente según si es limitación de testing o error real
+    let message = "Usuario creado exitosamente."
+    if (emailResult.isTestingLimitation) {
+      message += ` Nota: En modo testing, los emails solo se envían a ${VERIFIED_EMAIL}.`
+    } else if (emailResult.success) {
+      message += " Revisa tu email para verificar tu cuenta."
+    } else {
+      message += " Hubo un problema enviando el email de verificación."
+    }
+
+    res.status(201).json({
+      message,
+      emailSent: emailResult.success,
+      isTestingMode: emailResult.isTestingLimitation || false,
+    })
   } catch (error) {
     log("error", "Registration error:", {
       message: error.message,
       stack: error.stack,
     })
+    res.status(500).json({ message: "Error interno del servidor" })
+  }
+})
+
+// Verificar email
+app.get("/api/auth/verify-email/:token", async (req, res) => {
+  try {
+    const { token } = req.params
+    log("info", "Email verification attempt", { token: token.substring(0, 8) + "..." })
+
+    const user = await User.findOne({
+      verification_token: token,
+      verification_expires: { $gt: new Date() },
+      email_verified: false,
+    })
+
+    if (!user) {
+      log("warn", "Invalid or expired verification token", { token: token.substring(0, 8) + "..." })
+      return res.status(400).json({ message: "Token de verificación inválido o expirado" })
+    }
+
+    // Marcar email como verificado
+    await User.findByIdAndUpdate(user._id, {
+      email_verified: true,
+      verification_token: null,
+      verification_expires: null,
+    })
+
+    log("info", "Email verified successfully", { userId: user._id, email: user.email })
+    res.json({ message: "Email verificado exitosamente. Ya puedes iniciar sesión." })
+  } catch (error) {
+    log("error", "Email verification error:", { message: error.message })
+    res.status(500).json({ message: "Error interno del servidor" })
+  }
+})
+
+// Endpoint especial para testing - verificar email manualmente
+app.post("/api/auth/verify-email-manual", async (req, res) => {
+  try {
+    const { email } = req.body
+    log("info", "Manual email verification attempt", { email })
+
+    const user = await User.findOne({ email })
+    if (!user) {
+      return res.status(404).json({ message: "Usuario no encontrado" })
+    }
+
+    if (user.email_verified) {
+      return res.status(400).json({ message: "Email ya verificado" })
+    }
+
+    // Verificar manualmente (solo para testing)
+    await User.findByIdAndUpdate(user._id, {
+      email_verified: true,
+      verification_token: null,
+      verification_expires: null,
+    })
+
+    log("info", "Email verified manually", { userId: user._id, email: user.email })
+    res.json({ message: "Email verificado manualmente para testing" })
+  } catch (error) {
+    log("error", "Manual verification error:", { message: error.message })
     res.status(500).json({ message: "Error interno del servidor" })
   }
 })
@@ -248,6 +503,16 @@ app.post("/api/auth/login", async (req, res) => {
       return res.status(400).json({ message: "Credenciales inválidas" })
     }
 
+    // Verificar si el email está verificado
+    if (!user.email_verified) {
+      log("warn", "Login failed - email not verified", { email })
+      return res.status(400).json({
+        message: "Debes verificar tu email antes de iniciar sesión. Revisa tu bandeja de entrada.",
+        emailNotVerified: true,
+        isTestingMode: !process.env.RESEND_DOMAIN_VERIFIED,
+      })
+    }
+
     const token = jwt.sign({ id: user._id, email: user.email }, JWT_SECRET, { expiresIn: "24h" })
 
     log("info", "User logged in successfully", { email, userId: user._id })
@@ -261,6 +526,208 @@ app.post("/api/auth/login", async (req, res) => {
       stack: error.stack,
     })
     res.status(500).json({ message: "Error interno del servidor" })
+  }
+})
+
+// Reenviar verificación de email
+app.post("/api/auth/resend-verification", async (req, res) => {
+  try {
+    const { email } = req.body
+    log("info", "Resend verification request", { email })
+
+    const user = await User.findOne({ email })
+    if (!user) {
+      return res.json({ message: "Si el email existe, recibirás un nuevo enlace de verificación" })
+    }
+
+    if (user.email_verified) {
+      return res.status(400).json({ message: "Este email ya está verificado" })
+    }
+
+    // Generar nuevo token
+    const verificationToken = crypto.randomBytes(32).toString("hex")
+    const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000)
+
+    await User.findByIdAndUpdate(user._id, {
+      verification_token: verificationToken,
+      verification_expires: verificationExpires,
+    })
+
+    // 🔧 GENERAR URL DE VERIFICACIÓN CON BASE_URL CORRECTA
+    const baseUrl = getBaseUrl(req)
+    const verificationUrl = `${baseUrl}/verify-email?token=${verificationToken}`
+
+    const emailResult = await sendEmail(
+      email,
+      "Verifica tu cuenta - TarDia Bot Platform",
+      `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+            <h1 style="color: white; margin: 0;">🤖 TarDia Bot Platform</h1>
+          </div>
+          <div style="background: white; padding: 30px; border-radius: 0 0 10px 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+            <h2 style="color: #2d3748; margin-bottom: 20px;">Verifica tu cuenta</h2>
+            <p style="color: #718096; line-height: 1.6; margin-bottom: 25px;">
+              Solicitaste un nuevo enlace de verificación. Haz clic en el botón de abajo para verificar tu email.
+            </p>
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${verificationUrl}" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: 600; display: inline-block;">
+                Verificar Email
+              </a>
+            </div>
+            <p style="color: #718096; font-size: 14px; line-height: 1.5;">
+              Este enlace expirará en 24 horas por seguridad.
+            </p>
+            <p style="color: #a0aec0; font-size: 12px; margin-top: 20px;">
+              Si el botón no funciona, copia y pega este enlace en tu navegador:<br>
+              <span style="word-break: break-all;">${verificationUrl}</span>
+            </p>
+          </div>
+        </div>
+      `,
+    )
+
+    log("info", "Verification email resent", { email, emailSent: emailResult.success })
+    res.json({ message: "Si el email existe, recibirás un nuevo enlace de verificación" })
+  } catch (error) {
+    log("error", "Resend verification error:", { message: error.message })
+    res.status(500).json({ message: "Error interno del servidor" })
+  }
+})
+
+// Agregar después de las rutas de auth existentes
+// Solicitar recuperación de contraseña
+app.post("/api/auth/forgot-password", async (req, res) => {
+  try {
+    const { email } = req.body
+    log("info", "Password reset request", { email })
+
+    const user = await User.findOne({ email })
+    if (!user) {
+      // Por seguridad, no revelamos si el email existe o no
+      log("warn", "Password reset for non-existent user", { email })
+      return res.json({ message: "Si el email existe, recibirás un enlace de recuperación" })
+    }
+
+    // Generar token único
+    const resetToken = crypto.randomBytes(32).toString("hex")
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000) // 1 hora
+
+    // Guardar token en la base de datos
+    await PasswordReset.create({
+      user_id: user._id,
+      token: resetToken,
+      expires_at: expiresAt,
+    })
+
+    // 🔧 GENERAR URL DE RESET CON BASE_URL CORRECTA
+    const baseUrl = getBaseUrl(req)
+    const resetUrl = `${baseUrl}/reset-password?token=${resetToken}`
+
+    const emailResult = await sendEmail(
+      email,
+      "Recupera tu contraseña - TarDia Bot Platform",
+      `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+            <h1 style="color: white; margin: 0;">🤖 TarDia Bot Platform</h1>
+          </div>
+          <div style="background: white; padding: 30px; border-radius: 0 0 10px 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+            <h2 style="color: #2d3748; margin-bottom: 20px;">Recupera tu contraseña</h2>
+            <p style="color: #718096; line-height: 1.6; margin-bottom: 25px;">
+              Recibimos una solicitud para restablecer la contraseña de tu cuenta. 
+              Haz clic en el botón de abajo para crear una nueva contraseña.
+            </p>
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${resetUrl}" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px 30px; text-decoration: none; border-radius: 8px; font-weight: 600; display: inline-block;">
+                Restablecer Contraseña
+              </a>
+            </div>
+            <p style="color: #718096; font-size: 14px; line-height: 1.5;">
+              Este enlace expirará en 1 hora por seguridad.<br>
+              Si no solicitaste este cambio, puedes ignorar este email.
+            </p>
+            <p style="color: #a0aec0; font-size: 12px; margin-top: 20px;">
+              Si el botón no funciona, copia y pega este enlace en tu navegador:<br>
+              <span style="word-break: break-all;">${resetUrl}</span>
+            </p>
+            <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 25px 0;">
+            <p style="color: #a0aec0; font-size: 12px; text-align: center;">
+              © 2024 TarDia Bot Platform. Todos los derechos reservados.
+            </p>
+          </div>
+        </div>
+      `,
+    )
+
+    log("info", "Password reset email processed", {
+      email,
+      emailSent: emailResult.success,
+      error: emailResult.error || null,
+      resetUrl,
+    })
+
+    res.json({ message: "Si el email existe, recibirás un enlace de recuperación" })
+  } catch (error) {
+    log("error", "Forgot password error:", { message: error.message })
+    res.status(500).json({ message: "Error interno del servidor" })
+  }
+})
+
+// Restablecer contraseña
+app.post("/api/auth/reset-password", async (req, res) => {
+  try {
+    const { token, newPassword } = req.body
+    log("info", "Password reset attempt", { token: token.substring(0, 8) + "..." })
+
+    // Buscar token válido
+    const resetRecord = await PasswordReset.findOne({
+      token,
+      used: false,
+      expires_at: { $gt: new Date() },
+    }).populate("user_id")
+
+    if (!resetRecord) {
+      log("warn", "Invalid or expired reset token", { token: token.substring(0, 8) + "..." })
+      return res.status(400).json({ message: "Token inválido o expirado" })
+    }
+
+    // Actualizar contraseña
+    const hashedPassword = await bcrypt.hash(newPassword, 12)
+    await User.findByIdAndUpdate(resetRecord.user_id._id, {
+      password: hashedPassword,
+    })
+
+    // Marcar token como usado
+    await PasswordReset.findByIdAndUpdate(resetRecord._id, { used: true })
+
+    log("info", "Password reset successful", { userId: resetRecord.user_id._id })
+    res.json({ message: "Contraseña actualizada exitosamente" })
+  } catch (error) {
+    log("error", "Reset password error:", { message: error.message })
+    res.status(500).json({ message: "Error interno del servidor" })
+  }
+})
+
+// Verificar token de reset
+app.get("/api/auth/verify-reset-token/:token", async (req, res) => {
+  try {
+    const { token } = req.params
+
+    const resetRecord = await PasswordReset.findOne({
+      token,
+      used: false,
+      expires_at: { $gt: new Date() },
+    })
+
+    if (!resetRecord) {
+      return res.status(400).json({ valid: false, message: "Token inválido o expirado" })
+    }
+
+    res.json({ valid: true })
+  } catch (error) {
+    log("error", "Verify reset token error:", { message: error.message })
+    res.status(500).json({ valid: false, message: "Error interno del servidor" })
   }
 })
 
@@ -331,96 +798,98 @@ app.post("/api/crear-bot", authenticateToken, async (req, res) => {
 // FUNCIÓN DE CREACIÓN DE BOTS CORREGIDA Y ROBUSTA
 // =================================================================
 async function createBotAsync(bot) {
-  const workingDir = process.cwd();
-  const templateDir = path.join("/app", "bot-templates"); 
-  const botDir = path.join(workingDir, "generated-bots", bot._id.toString());
+  const workingDir = process.cwd()
+  const templateDir = path.join("/app", "bot-templates")
+  const botDir = path.join(workingDir, "generated-bots", bot._id.toString())
 
   try {
-    log("info", "Starting bot deployment", { botId: bot._id, botName: bot.name });
+    log("info", "Starting bot deployment", { botId: bot._id, botName: bot.name })
 
     // 1. Limpiar directorio previo y crearlo de nuevo
-    await fs.rm(botDir, { recursive: true, force: true });
-    await fs.mkdir(botDir, { recursive: true });
-    log("info", "Bot directory created", { botDir });
+    await fs.rm(botDir, { recursive: true, force: true })
+    await fs.mkdir(botDir, { recursive: true })
+    log("info", "Bot directory created", { botDir })
 
     // 2. ¡EL ARREGLO CLAVE! Copiar TODA la plantilla (archivos y carpetas) al directorio del bot.
-    log("info", "Copying all template files...", { from: templateDir, to: botDir });
-    await execAsync(`cp -rT ${templateDir}/. ${botDir}/`);
-    log("info", "Template files copied successfully");
+    log("info", "Copying all template files...", { from: templateDir, to: botDir })
+    await execAsync(`cp -rT ${templateDir}/. ${botDir}/`)
+    log("info", "Template files copied successfully")
 
     // 3. Modificar el package.json en el nuevo directorio
-    const packageJsonPath = path.join(botDir, "package.json");
-    const packageTemplate = await fs.readFile(packageJsonPath, "utf8");
-    const packageJson = JSON.parse(packageTemplate);
-    packageJson.name = `bot-${bot.name.toLowerCase()}`;
-    packageJson.description = `Bot ${bot.name} creado con TarDía Cloud Bot Platform`;
-    await fs.writeFile(packageJsonPath, JSON.stringify(packageJson, null, 2));
-    log("info", "package.json customized");
+    const packageJsonPath = path.join(botDir, "package.json")
+    const packageTemplate = await fs.readFile(packageJsonPath, "utf8")
+    const packageJson = JSON.parse(packageTemplate)
+    packageJson.name = `bot-${bot.name.toLowerCase()}`
+    packageJson.description = `Bot ${bot.name} creado con TarDía Cloud Bot Platform`
+    await fs.writeFile(packageJsonPath, JSON.stringify(packageJson, null, 2))
+    log("info", "package.json customized")
 
     // 4. Crear el archivo .env en el nuevo directorio
-    const envContent = generateBotEnvFile(bot);
-    await fs.writeFile(path.join(botDir, ".env"), envContent);
-    log("info", "File written", { filename: ".env" });
+    const envContent = generateBotEnvFile(bot)
+    await fs.writeFile(path.join(botDir, ".env"), envContent)
+    log("info", "File written", { filename: ".env" })
 
     // 5. Construir imagen Docker
-    const imageName = `bot-${bot.name.toLowerCase()}-${bot._id}:latest`;
-    log("info", "Building Docker image", { imageName });
+    const imageName = `bot-${bot.name.toLowerCase()}-${bot._id}:latest`
+    log("info", "Building Docker image", { imageName })
     try {
-      const { stdout } = await execAsync(`docker build -t ${imageName} ${botDir}`);
-      log("info", "Docker build completed", { imageName, stdout: stdout.slice(-200) });
+      const { stdout } = await execAsync(`docker build -t ${imageName} ${botDir}`)
+      log("info", "Docker build completed", { imageName, stdout: stdout.slice(-200) })
     } catch (error) {
-      log("error", "Docker build failed", { imageName, error: error.message, stderr: error.stderr });
-      throw new Error(`Docker build failed: ${error.message}`);
+      log("error", "Docker build failed", { imageName, error: error.message, stderr: error.stderr })
+      throw new Error(`Docker build failed: ${error.message}`)
     }
 
     // 6. Desplegar en Kubernetes
-    const deploymentYaml = generateKubernetesDeploymentForBot(bot, imageName);
-    const deploymentFile = path.join(botDir, "k8s-deployment.yaml");
-    await fs.writeFile(deploymentFile, deploymentYaml);
-    log("info", "Applying Kubernetes deployment", { deploymentFile });
+    const deploymentYaml = generateKubernetesDeploymentForBot(bot, imageName)
+    const deploymentFile = path.join(botDir, "k8s-deployment.yaml")
+    await fs.writeFile(deploymentFile, deploymentYaml)
+    log("info", "Applying Kubernetes deployment", { deploymentFile })
     try {
-      const { stdout } = await execAsync(`kubectl apply -f ${deploymentFile}`);
-      log("info", "Kubernetes deployment applied", { stdout });
+      const { stdout } = await execAsync(`kubectl apply -f ${deploymentFile}`)
+      log("info", "Kubernetes deployment applied", { stdout })
     } catch (error) {
-      log("error", "Kubernetes deployment failed", { error: error.message, stderr: error.stderr });
-      throw new Error(`Kubernetes deployment failed: ${error.message}`);
+      log("error", "Kubernetes deployment failed", { error: error.message, stderr: error.stderr })
+      throw new Error(`Kubernetes deployment failed: ${error.message}`)
     }
-    
+
     // 7. Esperar a que el pod esté listo
-    const deploymentName = `bot-${bot.name.toLowerCase()}-${bot._id}`;
-    log("info", "Waiting for deployment to be ready", { deploymentName });
-    await execAsync(`kubectl wait --for=condition=available --timeout=300s deployment/${deploymentName} -n ${KUBERNETES_NAMESPACE}`);
-    log("info", "Deployment is ready", { deploymentName });
+    const deploymentName = `bot-${bot.name.toLowerCase()}-${bot._id}`
+    log("info", "Waiting for deployment to be ready", { deploymentName })
+    await execAsync(
+      `kubectl wait --for=condition=available --timeout=300s deployment/${deploymentName} -n ${KUBERNETES_NAMESPACE}`,
+    )
+    log("info", "Deployment is ready", { deploymentName })
 
     // 8. Actualizar estado del bot en la base de datos
-    const serviceName = `${bot.name.toLowerCase()}-service`;
+    const serviceName = `${bot.name.toLowerCase()}-service`
     await Bot.findByIdAndUpdate(bot._id, {
       status: "active",
       url: `https://t.me/${bot.name}`,
-      deploy_url: `http://${serviceName}.${KUBERNETES_NAMESPACE}.svc.cluster.local`,
       kubernetes_deployment: deploymentName,
       error_message: null,
-    });
-    log("info", "Bot deployed successfully", { botId: bot._id, botName: bot.name });
-
+    })
+    log("info", "Bot deployed successfully", { botId: bot._id, botName: bot.name })
   } catch (error) {
-    log("error", "Bot deployment failed", { botId: bot._id, botName: bot.name, error: error.message, stack: error.stack });
+    log("error", "Bot deployment failed", {
+      botId: bot._id,
+      botName: bot.name,
+      error: error.message,
+      stack: error.stack,
+    })
     await Bot.findByIdAndUpdate(bot._id, {
       status: "error",
       error_message: error.message,
-    });
+    })
   }
 }
-
-
-// Reemplaza tu función generateBotEnvFile con esta versión corregida
 
 function generateBotEnvFile(bot) {
   // 1. Lee las claves de API desde el entorno del backend.
   //    Usa los nombres exactos con guiones que vimos con el comando `printenv`.
-  const weatherKey = process.env['weather-api-key'] || "";
-  const newsKey = process.env['news-api-key'] || "";
-  const geminiKey = process.env['gemini-api-key'] || "";
+  const weatherKey = process.env["weather-api-key"] || ""
+  const newsKey = process.env["news-api-key"] || ""
+  const geminiKey = process.env["gemini-api-key"] || ""
 
   // 2. Genera el contenido del archivo .env para el nuevo bot.
   //    Aquí escribimos las variables en el formato estándar (mayúsculas) que el bot leerá.
@@ -439,7 +908,7 @@ WEATHER_CITY=Buenos Aires
 # Configuración de la plataforma
 PLATFORM_VERSION=1.0.0
 CREATED_AT=${new Date().toISOString()}
-`;
+`
 }
 
 // Endpoint para eliminar bot con mejor logging
@@ -483,7 +952,7 @@ app.delete("/api/bots/:id", authenticateToken, async (req, res) => {
     // Eliminar directorio del bot
     try {
       const botDir = path.join(process.cwd(), "generated-bots", botId.toString())
-      await fs.rm(botDir, { recursive: true, force: true });
+      await fs.rm(botDir, { recursive: true, force: true })
       log("info", "Bot directory deleted", { botDir })
     } catch (dirError) {
       log("error", "Error deleting bot directory", {
@@ -514,6 +983,7 @@ app.listen(PORT, () => {
     port: PORT,
     healthEndpoint: `http://localhost:${PORT}/health`,
     kubernetesNamespace: KUBERNETES_NAMESPACE,
+    baseUrl: BASE_URL,
   })
 })
 

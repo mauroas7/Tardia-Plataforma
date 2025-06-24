@@ -30,7 +30,8 @@
             </div>
             
             <div class="auth-form">
-                <div class="tabs">
+                <!-- Tabs - Solo mostrar cuando no es forgot password -->
+                <div class="tabs" id="authTabs">
                     <button class="tab-btn active" data-tab="login">
                         <i class="fas fa-sign-in-alt"></i>
                         Iniciar Sesión
@@ -57,11 +58,23 @@
                             </label>
                             <input type="password" id="loginPassword" required placeholder="••••••••">
                         </div>
+                        <div class="form-group">
+                            <label class="checkbox-container">
+                                <input type="checkbox" id="rememberMe">
+                                <span class="checkmark"></span>
+                                Mantener sesión iniciada
+                            </label>
+                        </div>
                         <button type="submit" class="btn btn-primary btn-glow">
                             <i class="fas fa-sign-in-alt"></i>
                             Iniciar Sesión
                             <div class="btn-shine"></div>
                         </button>
+                        <div class="auth-links">
+                            <button type="button" class="link-btn" onclick="showForgotPassword()">
+                                ¿Olvidaste tu contraseña?
+                            </button>
+                        </div>
                     </form>
                     
                     <form id="registerForm" class="tab-content" data-tab-content="register">
@@ -85,8 +98,79 @@
                             <div class="btn-shine"></div>
                         </button>
                     </form>
+
+                    <!-- Forgot Password Form -->
+                    <form id="forgotPasswordForm" class="tab-content forgot-password-form" data-tab-content="forgot">
+                        <div class="forgot-header">
+                            <i class="fas fa-key"></i>
+                            <h3>Recuperar Contraseña</h3>
+                            <p>Ingresa tu email y te enviaremos un enlace para restablecer tu contraseña</p>
+                        </div>
+                        <div class="form-group">
+                            <label for="forgotEmail">
+                                <i class="fas fa-envelope"></i>
+                                Email
+                            </label>
+                            <input type="email" id="forgotEmail" required placeholder="tu@email.com">
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-glow">
+                            <i class="fas fa-paper-plane"></i>
+                            Enviar Enlace
+                            <div class="btn-shine"></div>
+                        </button>
+                        <div class="auth-links">
+                            <button type="button" class="link-btn" onclick="switchTab('login')">
+                                <i class="fas fa-arrow-left"></i>
+                                Volver al inicio de sesión
+                            </button>
+                        </div>
+                    </form>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- Reset Password Screen -->
+    <div id="resetPasswordScreen" class="screen">
+        <div class="auth-background">
+            <div class="floating-shapes">
+                <div class="shape shape-1"></div>
+                <div class="shape shape-2"></div>
+                <div class="shape shape-3"></div>
+                <div class="shape shape-4"></div>
+            </div>
+        </div>
+        <div class="auth-container">
+            <div class="auth-header">
+                <div class="logo">
+                    <i class="fas fa-robot"></i>
+                    <div class="logo-glow"></div>
+                </div>
+                <h1>Restablecer Contraseña</h1>
+                <p>Ingresa tu nueva contraseña</p>
+            </div>
+            
+            <form id="resetPasswordForm" class="auth-form">
+                <div class="form-group">
+                    <label for="newPassword">
+                        <i class="fas fa-lock"></i>
+                        Nueva Contraseña
+                    </label>
+                    <input type="password" id="newPassword" required placeholder="••••••••" minlength="6">
+                </div>
+                <div class="form-group">
+                    <label for="confirmPassword">
+                        <i class="fas fa-lock"></i>
+                        Confirmar Contraseña
+                    </label>
+                    <input type="password" id="confirmPassword" required placeholder="••••••••" minlength="6">
+                </div>
+                <button type="submit" class="btn btn-primary btn-glow">
+                    <i class="fas fa-check"></i>
+                    Actualizar Contraseña
+                    <div class="btn-shine"></div>
+                </button>
+            </form>
         </div>
     </div>
 
@@ -202,6 +286,25 @@
                 </button>
             </div>
             
+            <!-- BotFather Instructions First -->
+            <div class="modal-section">
+                <div class="instructions-preview">
+                    <div class="preview-header">
+                        <div class="preview-icon">
+                            <i class="fab fa-telegram"></i>
+                        </div>
+                        <div class="preview-content">
+                            <h4>¿Aún no tienes un bot en Telegram?</h4>
+                            <p>Necesitas crear tu bot en @BotFather primero para obtener el token y username</p>
+                        </div>
+                        <button type="button" class="btn btn-telegram btn-sm" onclick="openBotFatherInstructions()">
+                            <i class="fas fa-question-circle"></i>
+                            Ver Guía
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
             <form id="createBotForm">
                 <!-- Bot Info -->
                 <div class="form-section">
@@ -210,33 +313,31 @@
                             <i class="fas fa-info-circle"></i>
                             Información del Bot
                         </h4>
-                        <p>Configura los datos básicos de tu bot</p>
+                        <p>Ingresa los datos que obtuviste de @BotFather</p>
                     </div>
                     
                     <div class="form-group">
                         <label for="botName">
-                            <i class="fas fa-tag"></i>
-                            Nombre del Bot
+                            <i class="fas fa-at"></i>
+                            Username del Bot (sin @)
                         </label>
-                        <input type="text" id="botName" placeholder="MiBotSuperCool" required>
-                        <small>Nombre único para identificar tu bot</small>
+                        <input type="text" id="botName" placeholder="mibot-clima-bot" required>
+                        <small>
+                            <i class="fas fa-info-circle"></i>
+                            Debe ser exactamente el username que elegiste en @BotFather (sin @, solo letras, números y guiones)
+                        </small>
+                        <div id="botNameError" class="error-message" style="display: none;"></div>
                     </div>
                     
                     <div class="form-group">
                         <label for="botToken">
                             <i class="fas fa-key"></i>
                             Token de BotFather
-                            <button type="button" class="help-btn" onclick="openBotFatherInstructions()" title="¿Cómo obtener el token?">
-                                <i class="fas fa-question-circle"></i>
-                            </button>
                         </label>
                         <input type="password" id="botToken" placeholder="123456789:AAAbot..." required>
                         <small>
                             <i class="fas fa-info-circle"></i>
-                            ¿No tienes un token? 
-                            <button type="button" class="link-btn" onclick="openBotFatherInstructions()">
-                                Haz clic aquí para obtenerlo
-                            </button>
+                            El token que te dio @BotFather (formato: 123456789:AAAbot...)
                         </small>
                     </div>
                 </div>
@@ -383,11 +484,15 @@
                     <div class="step">
                         <div class="step-number">4</div>
                         <div class="step-content">
-                            <h5>Elige un username único</h5>
-                            <p>Debe terminar en "bot" y ser único. Por ejemplo: <code>mibot_clima_bot</code></p>
+                            <h5>Elige un username único </h5>
+                            <p>Debe terminar en "bot", ser único y solo contener letras, números y guiones. <strong>Este será el username que usarás en nuestra plataforma.</strong></p>
                             <div class="example-box">
                                 <i class="fas fa-at"></i>
-                                <span>Ejemplo: "mibot_clima_bot"</span>
+                                <span>Ejemplo: "MiClimaBot" (solo letras, números y guiones)</span>
+                            </div>
+                            <div class="warning-box">
+                                <i class="fas fa-exclamation-triangle"></i>
+                                <span>¡Recuerda este username! Lo necesitarás para crear el bot en nuestra plataforma.</span>
                             </div>
                         </div>
                     </div>

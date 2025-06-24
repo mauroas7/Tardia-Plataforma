@@ -293,6 +293,50 @@ body {
   font-size: 0.8rem;
 }
 
+.error-message {
+  background: rgba(229, 62, 62, 0.1);
+  border: 1px solid rgba(229, 62, 62, 0.3);
+  border-radius: 8px;
+  padding: 0.75rem;
+  margin-top: 0.5rem;
+  color: #742a2a;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.error-message i {
+  color: #e53e3e;
+}
+
+.form-group input.error {
+  border-color: #e53e3e;
+  box-shadow: 0 0 0 3px rgba(229, 62, 62, 0.1);
+}
+
+.form-group input.valid {
+  border-color: #38a169;
+  box-shadow: 0 0 0 3px rgba(72, 187, 120, 0.1);
+}
+
+.success-message {
+  background: rgba(72, 187, 120, 0.1);
+  border: 1px solid rgba(72, 187, 120, 0.3);
+  border-radius: 8px;
+  padding: 0.75rem;
+  margin-top: 0.5rem;
+  color: #22543d;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.success-message i {
+  color: #38a169;
+}
+
 /* Enhanced Buttons */
 .btn {
   display: inline-flex;
@@ -1679,4 +1723,166 @@ body {
   .footer-actions .btn {
     width: 100%;
   }
+}
+
+/* Agregar después de los estilos existentes de .auth-links */
+
+.checkbox-container {
+  display: flex !important;
+  align-items: center;
+  gap: 0.75rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: #718096;
+  margin-bottom: 0 !important;
+}
+
+.checkbox-container input[type="checkbox"] {
+  display: none;
+}
+
+.checkmark {
+  width: 20px;
+  height: 20px;
+  border: 2px solid #e2e8f0;
+  border-radius: 4px;
+  position: relative;
+  transition: var(--transition);
+  flex-shrink: 0;
+}
+
+.checkbox-container input[type="checkbox"]:checked + .checkmark {
+  background: var(--primary-gradient);
+  border-color: #667eea;
+}
+
+.checkbox-container input[type="checkbox"]:checked + .checkmark::after {
+  content: "✓";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: white;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.auth-links {
+  text-align: center;
+  margin-top: 1.5rem;
+}
+
+.forgot-header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.forgot-header i {
+  font-size: 3rem;
+  color: #667eea;
+  margin-bottom: 1rem;
+}
+
+.forgot-header h3 {
+  font-size: 1.5rem;
+  color: #2d3748;
+  margin-bottom: 0.75rem;
+  font-weight: 600;
+}
+
+.forgot-header p {
+  color: #718096;
+  line-height: 1.5;
+}
+
+/* Agregar después de los estilos del modal */
+
+.modal-section {
+  border-bottom: 1px solid rgba(247, 250, 252, 0.8);
+}
+
+.instructions-preview {
+  padding: 1.5rem 2rem;
+}
+
+.preview-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background: rgba(102, 126, 234, 0.05);
+  border: 1px solid rgba(102, 126, 234, 0.1);
+  border-radius: 12px;
+  padding: 1.5rem;
+}
+
+.preview-icon {
+  width: 50px;
+  height: 50px;
+  background: var(--primary-gradient);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+
+.preview-content {
+  flex: 1;
+}
+
+.preview-content h4 {
+  font-size: 1.1rem;
+  color: #2d3748;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+}
+
+.preview-content p {
+  color: #718096;
+  font-size: 0.9rem;
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* Ocultar tabs cuando está activo forgot password */
+.auth-form.forgot-active .tabs {
+  display: none;
+}
+
+/* Ajustar el espaciado cuando no hay tabs */
+.auth-form.forgot-active .tab-contents {
+  margin-top: 0;
+}
+
+/* Mejorar el estilo del formulario de forgot password */
+.forgot-password-form {
+  padding-top: 1rem;
+}
+
+.forgot-password-form .forgot-header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.forgot-password-form .forgot-header i {
+  font-size: 3rem;
+  color: #667eea;
+  margin-bottom: 1rem;
+  display: block;
+}
+
+.forgot-password-form .forgot-header h3 {
+  font-size: 1.5rem;
+  color: #2d3748;
+  margin-bottom: 0.75rem;
+  font-weight: 600;
+}
+
+.forgot-password-form .forgot-header p {
+  color: #718096;
+  line-height: 1.5;
+  max-width: 400px;
+  margin: 0 auto;
 }

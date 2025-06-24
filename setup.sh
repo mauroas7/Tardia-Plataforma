@@ -145,18 +145,20 @@ setup_kubernetes() {
     sleep 10
     
     # Create secrets
-    log_info "Creando secretos..."
+    log_info "Creando secretos de la aplicación..."
     kubectl create secret generic app-secrets \
       --from-literal=jwt-secret="cloud-bot-secret-key-2024" \
+      --from-literal=resend-api-key="re_3ptQ6vGT_3sYj7JLuFvbHNKZyahaASEvi" \
       --namespace=bot-platform
     
+    log_info "Creando secretos de los bots..."
     kubectl create secret generic bot-secrets \
       --from-literal=weather-api-key="a9fa79faf7ce399e52f803b1abc336dd" \
       --from-literal=news-api-key="d93ff7fc3de6c7b1142a5111c59ec2eb" \
       --from-literal=gemini-api-key="AIzaSyC95s7mI5n9BNCyQdWNacPnm13PKS8hekw" \
       --namespace=bot-platform
     
-    log_success "Secretos creados"
+    log_success "Secretos creados correctamente"
     
     # Create frontend configmap
     log_info "Creando ConfigMap del frontend..."
@@ -169,7 +171,6 @@ setup_kubernetes() {
     log_info "Aplicando configuraciones..."
     
     kubectl apply -f k8s/rbac.yaml
-    
     kubectl apply -f k8s/configmaps.yaml
     kubectl apply -f k8s/deployment.yaml
     kubectl apply -f k8s/frontend.yaml
@@ -265,6 +266,16 @@ test_services() {
     
     if curl -f http://localhost:8080/health > /dev/null 2>&1; then
         log_success "Backend responde correctamente"
+        
+        # Test password recovery
+        log_info "Probando recuperación de contraseña..."
+        if curl -s -X POST http://localhost:8080/api/auth/forgot-password \
+           -H "Content-Type: application/json" \
+           -d '{"email":"test@example.com"}' | grep -q "enlace"; then
+            log_success "✉️ Recuperación de contraseña configurada correctamente"
+        else
+            log_warning "Recuperación de contraseña no responde como esperado"
+        fi
     else
         log_warning "Backend no responde al health check"
         log_info "Verificando logs del backend..."
@@ -301,16 +312,22 @@ show_access_instructions() {
     log_success "🎉 ¡Setup completado exitosamente!"
     echo ""
     echo "🔗 Para acceder a la aplicación:"
-    echo "   Frontend: kubectl port-forward service/frontend 8080:80 -n bot-platform"
+    echo "   kubectl port-forward service/frontend 8080:80 -n bot-platform"
     echo "   Luego abre: http://localhost:8080"
+    echo ""
+    echo "✨ Funcionalidades disponibles:"
+    echo "   ✅ Registro y login de usuarios"
+    echo "   ✅ Creación y gestión de bots"
+    echo "   ✅ Recuperación de contraseña por email"
+    echo "   ✅ Sesiones persistentes"
     echo ""
     echo "🔍 Comandos útiles:"
     echo "   Ver logs backend: kubectl logs -l app=backend -n bot-platform -f"
     echo "   Ver logs frontend: kubectl logs -l app=frontend -n bot-platform -f"
     echo "   Estado general: kubectl get all -n bot-platform"
-    echo "   Debug completo: ./scripts/debug.sh"
     echo ""
-    echo "🗄️ Base de datos: MongoDB Atlas (ya configurado)"
+    echo "🗄️ Base de datos: MongoDB Atlas (configurado)"
+    echo "📧 Email service: Resend (configurado)"
     echo ""
     
     # Show environment-specific instructions
