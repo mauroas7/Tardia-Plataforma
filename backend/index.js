@@ -42,7 +42,9 @@ process.on("unhandledRejection", (reason, promise) => {
 })
 
 // Middleware
-app.use(cors())
+app.use(cors({
+  origin: 'https://plataformatardia.vercel.app' 
+}));
 app.use(express.json({ limit: "10mb" }))
 app.use(express.static("public"))
 
