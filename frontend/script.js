@@ -3,7 +3,7 @@ let currentUser = null
 let bots = []
 
 // API Configuration - Detectar automáticamente la URL base
-const API_BASE_URL = window.location.origin + "/api"
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8080/api";
 
 // Initialize app
 document.addEventListener("DOMContentLoaded", () => {
