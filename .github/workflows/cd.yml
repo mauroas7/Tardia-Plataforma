@@ -5,6 +5,10 @@ on:
     workflows: ["CI - Build and Push Images"]
     types:
       - completed
+    branches:
+      - main
+      - develop
+      - test
 
 jobs:
   deploy:
