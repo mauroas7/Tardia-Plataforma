@@ -68,28 +68,34 @@ jobs:
             --namespace=bot-platform \
             --dry-run=client -o yaml | kubectl apply -f -
 
+      - name: Create App ConfigMaps
+        run: |
+          echo "Creating application ConfigMaps..."
+          kubectl create configmap frontend-files --from-file=frontend/ -n bot-platform --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create configmap nginx-config --from-file=nginx.conf -n bot-platform --dry-run=client -o yaml | kubectl apply -f -
+                
       - name: Deploy to Kubernetes
         env:
-          DOCKER_REGISTRY: ${{ secrets.DOCKER_REGISTRY }}
+            DOCKER_REGISTRY: ${{ secrets.DOCKER_REGISTRY }}
         run: |
-          # Crear copias temporales para no modificar los originales
-          cp k8s/deployment.yaml k8s/deployment-temp.yaml
-          cp k8s/frontend.yaml k8s/frontend-temp.yaml
-          
-          # Reemplazar placeholders
-          sed -i "s|YOUR_DOCKER_REGISTRY|$DOCKER_REGISTRY|g" k8s/deployment-temp.yaml
-          sed -i "s|PLACEHOLDER_TAG|${{ steps.deploy_info.outputs.IMAGE_TAG }}|g" k8s/deployment-temp.yaml
-          sed -i "s|YOUR_DOCKER_REGISTRY|$DOCKER_REGISTRY|g" k8s/frontend-temp.yaml
-          sed -i "s|PLACEHOLDER_TAG|${{ steps.deploy_info.outputs.IMAGE_TAG }}|g" k8s/frontend-temp.yaml
-          
-          # Aplicar deployments
-          kubectl apply -f k8s/deployment-temp.yaml
-          kubectl apply -f k8s/frontend-temp.yaml
+            # Crear copias temporales para no modificar los originales
+            cp k8s/deployment.yaml k8s/deployment-temp.yaml
+            cp k8s/frontend.yaml k8s/frontend-temp.yaml
+            
+            # Reemplazar placeholders
+            sed -i "s|YOUR_DOCKER_REGISTRY|$DOCKER_REGISTRY|g" k8s/deployment-temp.yaml
+            sed -i "s|PLACEHOLDER_TAG|${{ steps.deploy_info.outputs.IMAGE_TAG }}|g" k8s/deployment-temp.yaml
+            sed -i "s|YOUR_DOCKER_REGISTRY|$DOCKER_REGISTRY|g" k8s/frontend-temp.yaml
+            sed -i "s|PLACEHOLDER_TAG|${{ steps.deploy_info.outputs.IMAGE_TAG }}|g" k8s/frontend-temp.yaml
+            
+            # Aplicar deployments
+            kubectl apply -f k8s/deployment-temp.yaml
+            kubectl apply -f k8s/frontend-temp.yaml
 
       - name: Wait for deployments
         run: |
-          kubectl wait --for=condition=available --timeout=300s deployment/backend -n bot-platform
-          kubectl wait --for=condition=available --timeout=180s deployment/frontend -n bot-platform
+            kubectl wait --for=condition=available --timeout=300s deployment/backend -n bot-platform
+            kubectl wait --for=condition=available --timeout=180s deployment/frontend -n bot-platform
 
       - name: Show Deployment Status
         run: kubectl get all -n bot-platform
