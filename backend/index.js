@@ -1,4 +1,3 @@
-
 const express = require("express")
 const cors = require("cors")
 const mongoose = require("mongoose")
@@ -9,9 +8,8 @@ const fs = require("fs").promises
 const path = require("path")
 const { exec } = require("child_process")
 const { promisify } = require("util")
-
-// Agregar después de las importaciones existentes
 const crypto = require("crypto")
+const nodemailer = require("nodemailer")
 
 // Enhanced logging con más detalles
 const log = (level, message, data = null) => {
@@ -26,7 +24,7 @@ const log = (level, message, data = null) => {
 const app = express()
 const execAsync = promisify(exec)
 
-// Enhanced error handling con más información
+// Enhanced error handling
 process.on("uncaughtException", (error) => {
   log("error", "Uncaught Exception:", {
     message: error.message,
@@ -45,12 +43,25 @@ process.on("unhandledRejection", (reason, promise) => {
   process.exit(1)
 })
 
+// CORS configuration for Vercel frontend
+const corsOptions = {
+  origin: [
+    "http://localhost:3000",
+    "http://localhost:8080",
+    "https://your-frontend-app.vercel.app", // Reemplaza con tu dominio de Vercel
+    process.env.FRONTEND_URL,
+  ].filter(Boolean),
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+}
+
 // Middleware
-app.use(cors())
+app.use(cors(corsOptions))
 app.use(express.json({ limit: "10mb" }))
 app.use(express.static("public"))
 
-// Environment variables with defaults y logging
+// Environment variables - Configuración para EC2
 const PORT = process.env.PORT || 3000
 const JWT_SECRET = process.env.JWT_SECRET || "cloud-bot-secret-key-2024"
 const MONGODB_URI =
@@ -58,27 +69,45 @@ const MONGODB_URI =
   "mongodb+srv://dbUser:ProyectoTarDia987654321@tardiacluster.mg4kvzx.mongodb.net/cloud-bot-platform?retryWrites=true&w=majority&appName=TarDiaCluster"
 const KUBERNETES_NAMESPACE = process.env.KUBERNETES_NAMESPACE || "bot-platform"
 
-// Configuración de email
-const RESEND_API_KEY = process.env.RESEND_API_KEY || "re_fvAWpSwK_foXuJ8FmPHMVXpmmBfspvMRS"
-const VERIFIED_EMAIL = "testdesarrollo2025@gmail.com" // Tu email verificado en Resend
-const FROM_EMAIL = "onboarding@resend.dev" // Email por defecto de Resend
+// Configuración de Nodemailer con Gmail
+const EMAIL_USER = process.env.EMAIL_USER || "tardiainfo@gmail.com"
+const EMAIL_PASS = process.env.EMAIL_PASS // App Password de Gmail
+const FRONTEND_URL = process.env.FRONTEND_URL || "https://your-frontend-app.vercel.app"
 
-// 🔧 CONFIGURACIÓN PARA MANEJAR PORT-FORWARD
-const BASE_URL = process.env.BASE_URL || "http://localhost:8080" // URL base para enlaces
+// Crear transporter de Nodemailer
+const createEmailTransporter = () => {
+  if (!EMAIL_PASS) {
+    log("warn", "Email password not configured")
+    return null
+  }
 
-log("info", "Starting Cloud Bot Platform API", {
+  return nodemailer.createTransporter({
+    service: "gmail",
+    auth: {
+      user: EMAIL_USER,
+      pass: EMAIL_PASS,
+    },
+    tls: {
+      rejectUnauthorized: false,
+    },
+  })
+}
+
+const emailTransporter = createEmailTransporter()
+
+log("info", "Starting Cloud Bot Platform API on EC2", {
   port: PORT,
-  baseUrl: BASE_URL,
-  mongoUri: MONGODB_URI.replace(/\/\/.*@/, "//***:***@"), // Hide credentials in logs
+  frontendUrl: FRONTEND_URL,
+  mongoUri: MONGODB_URI.replace(/\/\/.*@/, "//***:***@"),
   kubernetesNamespace: KUBERNETES_NAMESPACE,
-  resendConfigured: RESEND_API_KEY ? "Yes" : "No",
-  verifiedEmail: VERIFIED_EMAIL,
+  emailConfigured: !!emailTransporter,
+  emailUser: EMAIL_USER,
   nodeVersion: process.version,
   platform: process.platform,
   workingDirectory: process.cwd(),
 })
 
-// MongoDB connection con mejor logging
+// MongoDB connection
 const connectDB = async () => {
   try {
     log("info", "Attempting MongoDB connection...")
@@ -108,7 +137,6 @@ const connectDB = async () => {
   }
 }
 
-// Connect to database
 connectDB()
 
 mongoose.connection.on("error", (err) => {
@@ -126,7 +154,7 @@ mongoose.connection.on("reconnected", () => {
   log("info", "MongoDB reconnected")
 })
 
-// User Schema - Actualizado con verificación de email
+// Schemas
 const userSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true },
@@ -138,7 +166,6 @@ const userSchema = new mongoose.Schema({
 
 const User = mongoose.model("User", userSchema)
 
-// Bot Schema
 const botSchema = new mongoose.Schema({
   user_id: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
   name: { type: String, required: true },
@@ -148,13 +175,12 @@ const botSchema = new mongoose.Schema({
   url: String,
   repo_url: String,
   kubernetes_deployment: String,
-  error_message: String, // Agregar campo para errores
+  error_message: String,
   created_at: { type: Date, default: Date.now },
 })
 
 const Bot = mongoose.model("Bot", botSchema)
 
-// Agregar después del esquema de Bot
 const passwordResetSchema = new mongoose.Schema({
   user_id: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
   token: { type: String, required: true },
@@ -165,76 +191,38 @@ const passwordResetSchema = new mongoose.Schema({
 
 const PasswordReset = mongoose.model("PasswordReset", passwordResetSchema)
 
-// 🔧 FUNCIÓN PARA GENERAR URL BASE CORRECTA
-function getBaseUrl(req) {
-  // Si hay BASE_URL configurada, usarla (para port-forward)
-  if (BASE_URL && BASE_URL !== "auto") {
-    return BASE_URL
-  }
-
-  // Si no, construir desde el request
-  const protocol = req.protocol
-  const host = req.get("host")
-  return `${protocol}://${host}`
-}
-
-// Función para enviar emails con Resend (mejorada para manejar limitaciones)
+// Función para enviar emails con Nodemailer
 async function sendEmail(to, subject, html) {
-  if (!RESEND_API_KEY) {
-    log("warn", "Resend API key not configured, skipping email", { to, subject })
+  if (!emailTransporter) {
+    log("warn", "Email transporter not configured, skipping email", { to, subject })
     return { success: false, error: "Email service not configured" }
   }
 
-  // En modo testing, solo enviar a email verificado
-  const isTestingMode = !process.env.RESEND_DOMAIN_VERIFIED
-  if (isTestingMode && to !== VERIFIED_EMAIL) {
-    log("warn", "Testing mode: Email not sent to unverified address", {
-      to,
-      verifiedEmail: VERIFIED_EMAIL,
-      message: "In testing mode, emails can only be sent to verified address",
-    })
-
-    // Para testing, simular que se envió correctamente
-    // En producción, esto debería fallar o redirigir al email verificado
-    return {
-      success: false,
-      error: `Testing mode: Can only send to ${VERIFIED_EMAIL}`,
-      isTestingLimitation: true,
-    }
-  }
-
   try {
-    log("info", "Sending email via Resend", { to, subject, isTestingMode })
+    log("info", "Sending email via Nodemailer", { to, subject })
 
-    const response = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${RESEND_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        from: FROM_EMAIL,
-        to: [to],
-        subject: subject,
-        html: html,
-      }),
+    const mailOptions = {
+      from: `"TarDia Bot Platform" <${EMAIL_USER}>`,
+      to: to,
+      subject: subject,
+      html: html,
+    }
+
+    const result = await emailTransporter.sendMail(mailOptions)
+
+    log("info", "Email sent successfully", {
+      to,
+      messageId: result.messageId,
+      response: result.response,
     })
 
-    const responseData = await response.json()
-
-    if (response.ok) {
-      log("info", "Email sent successfully", { to, messageId: responseData.id })
-      return { success: true, messageId: responseData.id }
-    } else {
-      log("error", "Failed to send email", {
-        to,
-        status: response.status,
-        error: responseData,
-      })
-      return { success: false, error: responseData }
-    }
+    return { success: true, messageId: result.messageId }
   } catch (error) {
-    log("error", "Email service error", { to, error: error.message })
+    log("error", "Email service error", {
+      to,
+      error: error.message,
+      code: error.code,
+    })
     return { success: false, error: error.message }
   }
 }
@@ -260,7 +248,7 @@ const authenticateToken = (req, res, next) => {
 
 // Routes
 
-// Health check mejorado
+// Health check
 app.get("/health", (req, res) => {
   const healthData = {
     status: "healthy",
@@ -268,11 +256,10 @@ app.get("/health", (req, res) => {
     uptime: process.uptime(),
     mongodb: mongoose.connection.readyState === 1 ? "connected" : "disconnected",
     email: {
-      resendConfigured: !!RESEND_API_KEY,
-      verifiedEmail: VERIFIED_EMAIL,
-      testingMode: !process.env.RESEND_DOMAIN_VERIFIED,
+      nodemailerConfigured: !!emailTransporter,
+      emailUser: EMAIL_USER,
     },
-    baseUrl: BASE_URL,
+    frontendUrl: FRONTEND_URL,
     memory: process.memoryUsage(),
     version: "1.0.0",
     environment: process.env.NODE_ENV || "development",
@@ -282,43 +269,7 @@ app.get("/health", (req, res) => {
   res.json(healthData)
 })
 
-// Debug endpoint
-app.get("/api/debug", authenticateToken, async (req, res) => {
-  try {
-    const debugInfo = {
-      timestamp: new Date().toISOString(),
-      user: req.user,
-      mongodb: {
-        readyState: mongoose.connection.readyState,
-        host: mongoose.connection.host,
-        name: mongoose.connection.name,
-      },
-      environment: {
-        nodeVersion: process.version,
-        platform: process.platform,
-        uptime: process.uptime(),
-        memory: process.memoryUsage(),
-        workingDirectory: process.cwd(),
-      },
-      kubernetes: {
-        namespace: KUBERNETES_NAMESPACE,
-      },
-      email: {
-        resendConfigured: !!RESEND_API_KEY,
-        verifiedEmail: VERIFIED_EMAIL,
-        testingMode: !process.env.RESEND_DOMAIN_VERIFIED,
-      },
-      baseUrl: getBaseUrl(req),
-    }
-
-    res.json(debugInfo)
-  } catch (error) {
-    log("error", "Debug endpoint error:", error)
-    res.status(500).json({ message: "Error en debug", error: error.message })
-  }
-})
-
-// Auth routes con mejor logging
+// Auth routes
 app.post("/api/auth/register", async (req, res) => {
   try {
     const { email, password } = req.body
@@ -345,15 +296,12 @@ app.post("/api/auth/register", async (req, res) => {
     })
     await user.save()
 
-    // 🔧 GENERAR URL DE VERIFICACIÓN CON BASE_URL CORRECTA
-    const baseUrl = getBaseUrl(req)
-    const verificationUrl = `${baseUrl}/verify-email?token=${verificationToken}`
+    // URL de verificación apuntando al frontend en Vercel
+    const verificationUrl = `${FRONTEND_URL}/verify-email?token=${verificationToken}`
 
     log("info", "Generated verification URL", {
-      baseUrl,
       verificationUrl,
-      requestHost: req.get("host"),
-      requestProtocol: req.protocol,
+      frontendUrl: FRONTEND_URL,
     })
 
     const emailResult = await sendEmail(
@@ -397,15 +345,11 @@ app.post("/api/auth/register", async (req, res) => {
       userId: user._id,
       emailSent: emailResult.success,
       emailError: emailResult.error || null,
-      isTestingLimitation: emailResult.isTestingLimitation || false,
       verificationUrl,
     })
 
-    // Mensaje diferente según si es limitación de testing o error real
     let message = "Usuario creado exitosamente."
-    if (emailResult.isTestingLimitation) {
-      message += ` Nota: En modo testing, los emails solo se envían a ${VERIFIED_EMAIL}.`
-    } else if (emailResult.success) {
+    if (emailResult.success) {
       message += " Revisa tu email para verificar tu cuenta."
     } else {
       message += " Hubo un problema enviando el email de verificación."
@@ -414,7 +358,6 @@ app.post("/api/auth/register", async (req, res) => {
     res.status(201).json({
       message,
       emailSent: emailResult.success,
-      isTestingMode: emailResult.isTestingLimitation || false,
     })
   } catch (error) {
     log("error", "Registration error:", {
@@ -457,36 +400,6 @@ app.get("/api/auth/verify-email/:token", async (req, res) => {
   }
 })
 
-// Endpoint especial para testing - verificar email manualmente
-app.post("/api/auth/verify-email-manual", async (req, res) => {
-  try {
-    const { email } = req.body
-    log("info", "Manual email verification attempt", { email })
-
-    const user = await User.findOne({ email })
-    if (!user) {
-      return res.status(404).json({ message: "Usuario no encontrado" })
-    }
-
-    if (user.email_verified) {
-      return res.status(400).json({ message: "Email ya verificado" })
-    }
-
-    // Verificar manualmente (solo para testing)
-    await User.findByIdAndUpdate(user._id, {
-      email_verified: true,
-      verification_token: null,
-      verification_expires: null,
-    })
-
-    log("info", "Email verified manually", { userId: user._id, email: user.email })
-    res.json({ message: "Email verificado manualmente para testing" })
-  } catch (error) {
-    log("error", "Manual verification error:", { message: error.message })
-    res.status(500).json({ message: "Error interno del servidor" })
-  }
-})
-
 app.post("/api/auth/login", async (req, res) => {
   try {
     const { email, password } = req.body
@@ -510,7 +423,6 @@ app.post("/api/auth/login", async (req, res) => {
       return res.status(400).json({
         message: "Debes verificar tu email antes de iniciar sesión. Revisa tu bandeja de entrada.",
         emailNotVerified: true,
-        isTestingMode: !process.env.RESEND_DOMAIN_VERIFIED,
       })
     }
 
@@ -554,9 +466,7 @@ app.post("/api/auth/resend-verification", async (req, res) => {
       verification_expires: verificationExpires,
     })
 
-    // 🔧 GENERAR URL DE VERIFICACIÓN CON BASE_URL CORRECTA
-    const baseUrl = getBaseUrl(req)
-    const verificationUrl = `${baseUrl}/verify-email?token=${verificationToken}`
+    const verificationUrl = `${FRONTEND_URL}/verify-email?token=${verificationToken}`
 
     const emailResult = await sendEmail(
       email,
@@ -596,7 +506,6 @@ app.post("/api/auth/resend-verification", async (req, res) => {
   }
 })
 
-// Agregar después de las rutas de auth existentes
 // Solicitar recuperación de contraseña
 app.post("/api/auth/forgot-password", async (req, res) => {
   try {
@@ -605,7 +514,6 @@ app.post("/api/auth/forgot-password", async (req, res) => {
 
     const user = await User.findOne({ email })
     if (!user) {
-      // Por seguridad, no revelamos si el email existe o no
       log("warn", "Password reset for non-existent user", { email })
       return res.json({ message: "Si el email existe, recibirás un enlace de recuperación" })
     }
@@ -621,9 +529,7 @@ app.post("/api/auth/forgot-password", async (req, res) => {
       expires_at: expiresAt,
     })
 
-    // 🔧 GENERAR URL DE RESET CON BASE_URL CORRECTA
-    const baseUrl = getBaseUrl(req)
-    const resetUrl = `${baseUrl}/reset-password?token=${resetToken}`
+    const resetUrl = `${FRONTEND_URL}/reset-password?token=${resetToken}`
 
     const emailResult = await sendEmail(
       email,
@@ -732,7 +638,7 @@ app.get("/api/auth/verify-reset-token/:token", async (req, res) => {
   }
 })
 
-// Bot routes con mejor logging
+// Bot routes
 app.get("/api/bots", authenticateToken, async (req, res) => {
   try {
     log("info", "Fetching bots", { userId: req.user.id })
@@ -795,9 +701,7 @@ app.post("/api/crear-bot", authenticateToken, async (req, res) => {
   }
 })
 
-// =================================================================
-// FUNCIÓN DE CREACIÓN DE BOTS CORREGIDA Y ROBUSTA
-// =================================================================
+// Función de creación de bots (mantenida igual)
 async function createBotAsync(bot) {
   const workingDir = process.cwd()
   const templateDir = path.join("/app", "bot-templates")
@@ -806,17 +710,14 @@ async function createBotAsync(bot) {
   try {
     log("info", "Starting bot deployment", { botId: bot._id, botName: bot.name })
 
-    // 1. Limpiar directorio previo y crearlo de nuevo
     await fs.rm(botDir, { recursive: true, force: true })
     await fs.mkdir(botDir, { recursive: true })
     log("info", "Bot directory created", { botDir })
 
-    // 2. ¡EL ARREGLO CLAVE! Copiar TODA la plantilla (archivos y carpetas) al directorio del bot.
     log("info", "Copying all template files...", { from: templateDir, to: botDir })
     await execAsync(`cp -rT ${templateDir}/. ${botDir}/`)
     log("info", "Template files copied successfully")
 
-    // 3. Modificar el package.json en el nuevo directorio
     const packageJsonPath = path.join(botDir, "package.json")
     const packageTemplate = await fs.readFile(packageJsonPath, "utf8")
     const packageJson = JSON.parse(packageTemplate)
@@ -825,12 +726,10 @@ async function createBotAsync(bot) {
     await fs.writeFile(packageJsonPath, JSON.stringify(packageJson, null, 2))
     log("info", "package.json customized")
 
-    // 4. Crear el archivo .env en el nuevo directorio
     const envContent = generateBotEnvFile(bot)
     await fs.writeFile(path.join(botDir, ".env"), envContent)
     log("info", "File written", { filename: ".env" })
 
-    // 5. Construir imagen Docker
     const imageName = `bot-${bot.name.toLowerCase()}-${bot._id}:latest`
     log("info", "Building Docker image", { imageName })
     try {
@@ -841,7 +740,6 @@ async function createBotAsync(bot) {
       throw new Error(`Docker build failed: ${error.message}`)
     }
 
-    // 6. Desplegar en Kubernetes
     const deploymentYaml = generateKubernetesDeploymentForBot(bot, imageName)
     const deploymentFile = path.join(botDir, "k8s-deployment.yaml")
     await fs.writeFile(deploymentFile, deploymentYaml)
@@ -854,7 +752,6 @@ async function createBotAsync(bot) {
       throw new Error(`Kubernetes deployment failed: ${error.message}`)
     }
 
-    // 7. Esperar a que el pod esté listo
     const deploymentName = `bot-${bot.name.toLowerCase()}-${bot._id}`
     log("info", "Waiting for deployment to be ready", { deploymentName })
     await execAsync(
@@ -862,7 +759,6 @@ async function createBotAsync(bot) {
     )
     log("info", "Deployment is ready", { deploymentName })
 
-    // 8. Actualizar estado del bot en la base de datos
     const serviceName = `${bot.name.toLowerCase()}-service`
     await Bot.findByIdAndUpdate(bot._id, {
       status: "active",
@@ -886,14 +782,10 @@ async function createBotAsync(bot) {
 }
 
 function generateBotEnvFile(bot) {
-  // 1. Lee las claves de API desde el entorno del backend.
-  //    Usa los nombres exactos con guiones que vimos con el comando `printenv`.
-  const weatherKey = process.env["weather-api-key"] || ""
-  const newsKey = process.env["news-api-key"] || ""
-  const geminiKey = process.env["gemini-api-key"] || ""
+  const weatherKey = process.env.WEATHER_API_KEY || ""
+  const newsKey = process.env.NEWS_API_KEY || ""
+  const geminiKey = process.env.GEMINI_API_KEY || ""
 
-  // 2. Genera el contenido del archivo .env para el nuevo bot.
-  //    Aquí escribimos las variables en el formato estándar (mayúsculas) que el bot leerá.
   return `# Configuración del Bot ${bot.name}
 BOT_NAME=${bot.name}
 BOT_TOKEN=${bot.token}
@@ -912,7 +804,7 @@ CREATED_AT=${new Date().toISOString()}
 `
 }
 
-// Endpoint para eliminar bot con mejor logging
+// Endpoint para eliminar bot
 app.delete("/api/bots/:id", authenticateToken, async (req, res) => {
   try {
     const botId = req.params.id
@@ -927,7 +819,6 @@ app.delete("/api/bots/:id", authenticateToken, async (req, res) => {
 
     log("info", "Deleting bot", { botId, botName: bot.name })
 
-    // Eliminar recursos de Kubernetes
     try {
       if (bot.kubernetes_deployment) {
         const deploymentName = bot.kubernetes_deployment
@@ -950,7 +841,6 @@ app.delete("/api/bots/:id", authenticateToken, async (req, res) => {
       })
     }
 
-    // Eliminar directorio del bot
     try {
       const botDir = path.join(process.cwd(), "generated-bots", botId.toString())
       await fs.rm(botDir, { recursive: true, force: true })
@@ -962,7 +852,6 @@ app.delete("/api/bots/:id", authenticateToken, async (req, res) => {
       })
     }
 
-    // Eliminar bot de la base de datos
     await Bot.findByIdAndDelete(botId)
 
     log("info", "Bot deleted successfully", { botId, botName: bot.name })
@@ -979,12 +868,13 @@ app.delete("/api/bots/:id", authenticateToken, async (req, res) => {
 })
 
 // Start server
-app.listen(PORT, () => {
-  log("info", "Server started successfully", {
+app.listen(PORT, "0.0.0.0", () => {
+  log("info", "Server started successfully on EC2", {
     port: PORT,
+    host: "0.0.0.0",
     healthEndpoint: `http://localhost:${PORT}/health`,
     kubernetesNamespace: KUBERNETES_NAMESPACE,
-    baseUrl: BASE_URL,
+    frontendUrl: FRONTEND_URL,
   })
 })
 
