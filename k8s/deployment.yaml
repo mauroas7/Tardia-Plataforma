@@ -17,6 +17,9 @@ spec:
         app: backend
         tier: api
     spec:
+      serviceAccountName: bot-creator-account
+      imagePullSecrets:   # <--- AÑADE ESTE BLOQUE
+      - name: regcred
       containers:
       - name: backend
         image: cloud-bot-platform:latest
