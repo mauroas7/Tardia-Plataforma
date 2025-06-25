@@ -522,7 +522,6 @@ main() {
     echo "🚀 Iniciando despliegue en EC2 con Minikube..."
     echo ""
     
-    check_environment
     install_system_dependencies
     install_docker
     install_kubectl
