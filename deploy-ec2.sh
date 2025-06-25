@@ -39,15 +39,7 @@ check_environment() {
         log_success "Instancia EC2 detectada"
     fi
     
-    # Verificar recursos mínimos
-    MEMORY_GB=$(free -g | awk '/^Mem:/{print $2}')
-    if [ "$MEMORY_GB" -lt 2 ]; then
-        log_error "Se requieren al menos 2GB de RAM para Minikube"
-        exit 1
-    fi
-    
-    log_success "Recursos suficientes detectados (${MEMORY_GB}GB RAM)"
-}
+   
 
 # Instalar dependencias del sistema
 install_system_dependencies() {
