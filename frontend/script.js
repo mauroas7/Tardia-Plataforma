@@ -4,7 +4,7 @@ let bots = []
 
 
 // API Configuration - CAMBIO IMPORTANTE: Apuntar al backend en EC2
-const API_BASE_URL = "http://54.94.162.224:30000/api" // Reemplaza con la IP de tu EC2
+const API_BASE_URL = "http://54.94.162.224:3000/api" // Reemplaza con la IP de tu EC2
 
 
 // Session management
