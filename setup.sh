@@ -2,8 +2,8 @@
 
 set -e  # Exit on any error
 
-echo "🚀 Cloud Bot Platform - Setup Unificado"
-echo "======================================="
+echo "🚀 TarDía Bot Platform - Setup Local con Minikube"
+echo "================================================"
 
 # Colors for output
 RED='\033[0;31m'
@@ -30,65 +30,61 @@ log_error() {
 
 # Check prerequisites
 check_prerequisites() {
-    log_info "Verificando prerequisitos..."
+    log_info "Verificando prerequisitos para desarrollo local..."
+    
+    if ! command -v minikube &> /dev/null; then
+        log_error "minikube no está instalado"
+        echo "Instala minikube desde: https://minikube.sigs.k8s.io/docs/start/"
+        exit 1
+    fi
     
     if ! command -v kubectl &> /dev/null; then
-        log_error "kubectl no está instalado o no está en el PATH"
+        log_error "kubectl no está instalado"
+        echo "Instala kubectl desde: https://kubernetes.io/docs/tasks/tools/"
         exit 1
     fi
     
     if ! command -v docker &> /dev/null; then
-        log_error "Docker no está instalado o no está en el PATH"
+        log_error "Docker no está instalado"
+        echo "Instala Docker desde: https://docs.docker.com/get-docker/"
         exit 1
     fi
     
     log_success "Prerequisitos verificados"
 }
 
-# Detect environment
-detect_environment() {
-    log_info "Detectando entorno de Kubernetes..."
+# Setup minikube
+setup_minikube() {
+    log_info "🎯 Configurando Minikube..."
     
-    if command -v minikube &> /dev/null && minikube status &> /dev/null; then
-        KUBE_ENV="minikube"
-        log_info "🎯 Detectado: Minikube"
-    elif command -v kind &> /dev/null && kind get clusters &> /dev/null; then
-        KUBE_ENV="kind"
-        log_info "🎯 Detectado: kind"
-    elif kubectl cluster-info | grep -q "docker-desktop"; then
-        KUBE_ENV="docker-desktop"
-        log_info "🎯 Detectado: Docker Desktop"
+    # Check if minikube is running
+    if ! minikube status &> /dev/null; then
+        log_info "Iniciando Minikube..."
+        minikube start --driver=docker --memory=4096 --cpus=2
+        log_success "Minikube iniciado"
     else
-        KUBE_ENV="other"
-        log_info "🎯 Detectado: Otro entorno Kubernetes"
+        log_success "Minikube ya está ejecutándose"
     fi
-}
-
-# Setup Docker environment
-setup_docker_environment() {
-    log_info "Configurando entorno Docker..."
     
-    case $KUBE_ENV in
-        "minikube")
-            log_info "📦 Configurando Docker para Minikube..."
-            eval $(minikube docker-env)
-            log_success "Entorno Docker de Minikube configurado"
-            ;;
-        "kind")
-            log_info "📦 Usando Docker local para kind..."
-            ;;
-        "docker-desktop")
-            log_info "📦 Usando Docker Desktop..."
-            ;;
-        *)
-            log_info "📦 Usando Docker local..."
-            ;;
-    esac
+    # Enable addons
+    log_info "Habilitando addons necesarios..."
+    minikube addons enable ingress
+    minikube addons enable dashboard
+    minikube addons enable metrics-server
+    
+    # Configure Docker environment
+    log_info "Configurando entorno Docker de Minikube..."
+    eval $(minikube docker-env)
+    
+    log_success "Minikube configurado correctamente"
 }
 
 # Build Docker image
 build_docker_image() {
-    log_info "🏗️ Construyendo imagen Docker..."
+    log_info "🏗️ Construyendo imagen Docker en Minikube..."
+    
+    # Make sure we're using minikube's docker
+    eval $(minikube docker-env)
     
     cd backend
     if docker build -t cloud-bot-platform:latest . --no-cache; then
@@ -99,26 +95,11 @@ build_docker_image() {
     fi
     cd ..
     
-    # Load image into cluster if needed
-    case $KUBE_ENV in
-        "kind")
-            log_info "📦 Cargando imagen en kind..."
-            kind load docker-image cloud-bot-platform:latest
-            log_success "Imagen cargada en kind"
-            ;;
-        "minikube")
-            log_success "Imagen ya disponible en Minikube"
-            ;;
-        *)
-            log_info "Imagen construida localmente"
-            ;;
-    esac
-    
-    # Verify image exists
-    if docker images | grep -q cloud-bot-platform; then
-        log_success "Imagen verificada correctamente"
+    # Verify image exists in minikube
+    if eval $(minikube docker-env) && docker images | grep -q cloud-bot-platform; then
+        log_success "Imagen verificada en Minikube"
     else
-        log_error "No se pudo verificar la imagen"
+        log_error "No se pudo verificar la imagen en Minikube"
         exit 1
     fi
 }
@@ -128,30 +109,31 @@ setup_kubernetes() {
     log_info "🔧 Configurando recursos de Kubernetes..."
     
     # Create namespace
-    log_info "Creando namespace..."
+    log_info "Creando namespace bot-platform..."
     kubectl create namespace bot-platform --dry-run=client -o yaml | kubectl apply -f -
     log_success "Namespace creado/verificado"
     
     # Clean up existing resources
     log_info "Limpiando recursos existentes..."
-    kubectl delete deployment backend frontend mongodb --ignore-not-found=true -n bot-platform
-    kubectl delete pvc mongodb-pvc --ignore-not-found=true -n bot-platform
-    kubectl delete service mongodb --ignore-not-found=true -n bot-platform
-    kubectl delete secret mongodb-secret app-secrets bot-secrets --ignore-not-found=true -n bot-platform
+    kubectl delete deployment backend frontend --ignore-not-found=true -n bot-platform
+    kubectl delete service backend frontend --ignore-not-found=true -n bot-platform
+    kubectl delete secret app-secrets bot-secrets --ignore-not-found=true -n bot-platform
     kubectl delete configmap frontend-files nginx-config --ignore-not-found=true -n bot-platform
     
     # Wait for cleanup
     log_info "Esperando limpieza completa..."
-    sleep 10
+    sleep 5
     
-    # Create secrets
-    log_info "Creando secretos de la aplicación..."
+    # Create secrets for local development
+    log_info "Creando secretos para desarrollo local..."
     kubectl create secret generic app-secrets \
-      --from-literal=jwt-secret="cloud-bot-secret-key-2024" \
-      --from-literal=resend-api-key="re_3ptQ6vGT_3sYj7JLuFvbHNKZyahaASEvi" \
+      --from-literal=jwt-secret="cloud-bot-secret-key-2024-local" \
+      --from-literal=mongodb-uri="mongodb+srv://dbUser:ProyectoTarDia987654321@tardiacluster.mg4kvzx.mongodb.net/cloud-bot-platform?retryWrites=true&w=majority&appName=TarDiaCluster" \
+      --from-literal=email-user="tardiainfo@gmail.com" \
+      --from-literal=email-pass="jbka nukx bmov mmij" \
+      --from-literal=frontend-url="http://localhost:8080" \
       --namespace=bot-platform
     
-    log_info "Creando secretos de los bots..."
     kubectl create secret generic bot-secrets \
       --from-literal=weather-api-key="a9fa79faf7ce399e52f803b1abc336dd" \
       --from-literal=news-api-key="d93ff7fc3de6c7b1142a5111c59ec2eb" \
@@ -167,28 +149,33 @@ setup_kubernetes() {
       --namespace=bot-platform \
       --dry-run=client -o yaml | kubectl apply -f -
     
-    # Apply configurations
-    log_info "Aplicando configuraciones..."
-    
-    kubectl apply -f k8s/rbac.yaml
-    kubectl apply -f k8s/configmaps.yaml
-    kubectl apply -f k8s/deployment.yaml
-    kubectl apply -f k8s/frontend.yaml
-
-    # Create nginx configmap
-    log_info "Creando ConfigMap de nginx..."
+    # Create nginx configmap for local development
+    log_info "Creando ConfigMap de nginx para desarrollo local..."
     kubectl create configmap nginx-config \
       --from-file=nginx.conf \
       --namespace=bot-platform \
       --dry-run=client -o yaml | kubectl apply -f -
-
-    log_success "ConfigMaps creados"
-
-    # Restart frontend to load changes
-    log_info "Reiniciando frontend para cargar cambios..."
-    kubectl delete pod -l app=frontend -n bot-platform --ignore-not-found=true
     
-    log_success "Configuraciones aplicadas"
+    # Apply RBAC and other configurations
+    log_info "Aplicando configuraciones RBAC..."
+    kubectl apply -f k8s/rbac.yaml
+    
+    log_success "ConfigMaps y RBAC aplicados"
+}
+
+# Deploy applications
+deploy_applications() {
+    log_info "🚀 Desplegando aplicaciones..."
+    
+    # Deploy backend
+    log_info "Desplegando backend..."
+    kubectl apply -f k8s/deployment.yaml
+    
+    # Deploy frontend
+    log_info "Desplegando frontend..."
+    kubectl apply -f k8s/frontend.yaml
+    
+    log_success "Aplicaciones desplegadas"
 }
 
 # Wait for deployments
@@ -201,8 +188,7 @@ wait_for_deployments() {
         log_success "Backend está listo"
     else
         log_error "Backend no pudo iniciarse en 5 minutos"
-        log_info "Mostrando logs del backend..."
-        kubectl logs -l app=backend -n bot-platform --tail=20
+        show_debug_info
         return 1
     fi
     
@@ -212,170 +198,296 @@ wait_for_deployments() {
         log_success "Frontend está listo"
     else
         log_warning "Frontend tardó más de lo esperado"
+        show_debug_info
     fi
 }
 
-# Debug backend issues
-debug_backend_issues() {
-    log_info "🔍 Diagnosticando problemas del backend..."
+# Show debug information
+show_debug_info() {
+    log_info "🔍 Información de debug..."
     
-    # Check backend pod status
-    BACKEND_PODS=$(kubectl get pods -n bot-platform -l app=backend --no-headers)
-    echo "📦 Estado de pods del backend:"
-    echo "$BACKEND_PODS"
+    echo ""
+    echo "📦 Estado de Deployments:"
+    kubectl get deployments -n bot-platform
     
-    # Check if pods are crashing
-    if echo "$BACKEND_PODS" | grep -q "CrashLoopBackOff\|Error\|Pending"; then
-        log_warning "Backend tiene problemas, mostrando logs..."
-        
-        # Get the most recent backend pod
-        BACKEND_POD=$(kubectl get pods -n bot-platform -l app=backend -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
-        
-        if [ ! -z "$BACKEND_POD" ]; then
-            echo ""
-            echo "📋 Logs del backend (últimas 50 líneas):"
-            kubectl logs $BACKEND_POD -n bot-platform --tail=50 || true
-            
-            echo ""
-            echo "📋 Eventos del pod:"
-            kubectl describe pod $BACKEND_POD -n bot-platform | tail -20
-        fi
-        
-        echo ""
-        log_info "💡 Posibles soluciones:"
-        echo "1. Verificar que MongoDB Atlas permita conexiones desde tu IP"
-        echo "2. Ejecutar: ./fix-atlas-connection.sh"
-        echo "3. Verificar variables de entorno en el deployment"
-        
-        return 1
-    else
-        log_success "Backend parece estar funcionando correctamente"
-        return 0
-    fi
+    echo ""
+    echo "🏃 Estado de Pods:"
+    kubectl get pods -n bot-platform
+    
+    echo ""
+    echo "📋 Logs del Backend (últimas 20 líneas):"
+    kubectl logs -l app=backend -n bot-platform --tail=20 || echo "No hay logs disponibles"
+    
+    echo ""
+    echo "📋 Eventos recientes:"
+    kubectl get events -n bot-platform --sort-by='.lastTimestamp' | tail -10
 }
 
 # Test services
 test_services() {
     log_info "🧪 Probando servicios..."
     
+    # Get minikube IP
+    MINIKUBE_IP=$(minikube ip)
+    log_info "IP de Minikube: $MINIKUBE_IP"
+    
     # Test backend health
     log_info "Probando salud del backend..."
-    kubectl port-forward service/backend 8080:80 -n bot-platform &
-    PF_PID=$!
+    kubectl port-forward service/backend 8081:80 -n bot-platform &
+    BACKEND_PF_PID=$!
     sleep 5
     
-    if curl -f http://localhost:8080/health > /dev/null 2>&1; then
-        log_success "Backend responde correctamente"
+    if curl -f http://localhost:8081/health > /dev/null 2>&1; then
+        log_success "✅ Backend responde correctamente"
         
-        # Test password recovery
-        log_info "Probando recuperación de contraseña..."
-        if curl -s -X POST http://localhost:8080/api/auth/forgot-password \
-           -H "Content-Type: application/json" \
-           -d '{"email":"test@example.com"}' | grep -q "enlace"; then
-            log_success "✉️ Recuperación de contraseña configurada correctamente"
-        else
-            log_warning "Recuperación de contraseña no responde como esperado"
-        fi
+        # Show health info
+        echo "📊 Estado del backend:"
+        curl -s http://localhost:8081/health | python3 -m json.tool 2>/dev/null || curl -s http://localhost:8081/health
     else
         log_warning "Backend no responde al health check"
-        log_info "Verificando logs del backend..."
-        kubectl logs -l app=backend -n bot-platform --tail=10
+        show_debug_info
     fi
     
-    kill $PF_PID 2>/dev/null || true
+    kill $BACKEND_PF_PID 2>/dev/null || true
     sleep 2
 }
 
-# Show final status
-show_final_status() {
-    log_info "📊 Estado final del sistema..."
+# Create helper scripts
+create_helper_scripts() {
+    log_info "📝 Creando scripts de ayuda..."
+    
+    # Port forward script
+    cat > start-port-forward.sh << 'EOF'
+#!/bin/bash
+echo "🌐 Iniciando port-forward para acceso web..."
+echo "Frontend: http://localhost:8080"
+echo "Backend: http://localhost:8081"
+echo ""
+echo "Presiona Ctrl+C para detener"
+
+# Start port forwards in background
+kubectl port-forward service/frontend 8080:80 -n bot-platform &
+FRONTEND_PID=$!
+
+kubectl port-forward service/backend 8081:80 -n bot-platform &
+BACKEND_PID=$!
+
+# Wait for interrupt
+trap "kill $FRONTEND_PID $BACKEND_PID 2>/dev/null; exit" INT
+
+echo "✅ Port-forwards activos"
+echo "   Frontend: http://localhost:8080"
+echo "   Backend: http://localhost:8081"
+
+wait
+EOF
+
+    # Monitor script
+    cat > monitor-local.sh << 'EOF'
+#!/bin/bash
+echo "📊 Monitor del Sistema Local"
+echo "============================"
+
+while true; do
+    clear
+    echo "📊 TarDía Bot Platform - Monitor Local"
+    echo "======================================"
+    echo "Tiempo: $(date)"
     echo ""
+    
     echo "📦 Deployments:"
     kubectl get deployments -n bot-platform
-    
     echo ""
+    
     echo "🏃 Pods:"
     kubectl get pods -n bot-platform
-    
     echo ""
+    
     echo "🌐 Services:"
     kubectl get services -n bot-platform
-    
     echo ""
-    echo "🔐 Secrets:"
-    kubectl get secrets -n bot-platform
+    
+    echo "💾 Uso de recursos:"
+    kubectl top pods -n bot-platform 2>/dev/null || echo "Metrics no disponibles"
+    echo ""
+    
+    echo "Presiona Ctrl+C para salir"
+    sleep 10
+done
+EOF
+
+    # Logs script
+    cat > logs-local.sh << 'EOF'
+#!/bin/bash
+echo "📋 Logs del Sistema"
+echo "=================="
+echo ""
+echo "Selecciona qué logs ver:"
+echo "1) Backend"
+echo "2) Frontend"
+echo "3) Todos los pods"
+echo "4) Eventos del cluster"
+echo ""
+read -p "Opción (1-4): " choice
+
+case $choice in
+    1)
+        echo "📋 Logs del Backend:"
+        kubectl logs -l app=backend -n bot-platform -f
+        ;;
+    2)
+        echo "📋 Logs del Frontend:"
+        kubectl logs -l app=frontend -n bot-platform -f
+        ;;
+    3)
+        echo "📋 Logs de todos los pods:"
+        kubectl logs -l tier=api,tier=web -n bot-platform -f
+        ;;
+    4)
+        echo "📋 Eventos del cluster:"
+        kubectl get events -n bot-platform -w
+        ;;
+    *)
+        echo "Opción inválida"
+        ;;
+esac
+EOF
+
+    # Restart script
+    cat > restart-local.sh << 'EOF'
+#!/bin/bash
+echo "🔄 Reiniciando servicios..."
+
+echo "Reiniciando backend..."
+kubectl delete pod -l app=backend -n bot-platform
+
+echo "Reiniciando frontend..."
+kubectl delete pod -l app=frontend -n bot-platform
+
+echo "✅ Servicios reiniciados"
+echo "Usa ./monitor-local.sh para ver el estado"
+EOF
+
+    # Cleanup script
+    cat > cleanup-local.sh << 'EOF'
+#!/bin/bash
+echo "🧹 Limpiando recursos locales..."
+
+read -p "¿Estás seguro de que quieres limpiar todo? (y/N): " -n 1 -r
+echo
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    echo "Eliminando namespace bot-platform..."
+    kubectl delete namespace bot-platform --ignore-not-found=true
+    
+    echo "Eliminando imágenes Docker..."
+    eval $(minikube docker-env)
+    docker rmi cloud-bot-platform:latest 2>/dev/null || true
+    
+    echo "✅ Limpieza completada"
+else
+    echo "❌ Limpieza cancelada"
+fi
+EOF
+
+    # Make scripts executable
+    chmod +x start-port-forward.sh monitor-local.sh logs-local.sh restart-local.sh cleanup-local.sh
+    
+    log_success "Scripts de ayuda creados"
 }
 
-# Show access instructions
-show_access_instructions() {
+# Show final status and instructions
+show_final_status() {
     echo ""
-    log_success "🎉 ¡Setup completado exitosamente!"
+    log_success "🎉 ¡Setup local completado exitosamente!"
     echo ""
-    echo "🔗 Para acceder a la aplicación:"
-    echo "   kubectl port-forward service/frontend 8080:80 -n bot-platform"
-    echo "   Luego abre: http://localhost:8080"
+    
+    # Show current status
+    echo "📊 Estado actual del sistema:"
+    kubectl get all -n bot-platform
     echo ""
+    
+    # Get minikube info
+    MINIKUBE_IP=$(minikube ip)
+    
+    echo "🔗 Acceso a la aplicación:"
+    echo "   1. Ejecuta: ./start-port-forward.sh"
+    echo "   2. Abre: http://localhost:8080"
+    echo ""
+    
+    echo "🛠️ Scripts disponibles:"
+    echo "   ./start-port-forward.sh  - Iniciar acceso web"
+    echo "   ./monitor-local.sh       - Monitorear sistema"
+    echo "   ./logs-local.sh          - Ver logs"
+    echo "   ./restart-local.sh       - Reiniciar servicios"
+    echo "   ./cleanup-local.sh       - Limpiar todo"
+    echo ""
+    
+    echo "🎯 Minikube:"
+    echo "   IP: $MINIKUBE_IP"
+    echo "   Dashboard: minikube dashboard"
+    echo "   Status: minikube status"
+    echo ""
+    
     echo "✨ Funcionalidades disponibles:"
     echo "   ✅ Registro y login de usuarios"
     echo "   ✅ Creación y gestión de bots"
     echo "   ✅ Recuperación de contraseña por email"
     echo "   ✅ Sesiones persistentes"
-    echo ""
-    echo "🔍 Comandos útiles:"
-    echo "   Ver logs backend: kubectl logs -l app=backend -n bot-platform -f"
-    echo "   Ver logs frontend: kubectl logs -l app=frontend -n bot-platform -f"
-    echo "   Estado general: kubectl get all -n bot-platform"
-    echo ""
-    echo "🗄️ Base de datos: MongoDB Atlas (configurado)"
-    echo "📧 Email service: Resend (configurado)"
+    echo "   ✅ MongoDB Atlas integrado"
     echo ""
     
-    # Show environment-specific instructions
-    case $KUBE_ENV in
-        "minikube")
-            echo "🎯 Minikube detectado:"
-            echo "   Dashboard: minikube dashboard"
-            echo "   Tunnel: minikube tunnel (en otra terminal para LoadBalancer)"
-            ;;
-        "kind")
-            echo "🎯 kind detectado:"
-            echo "   Clusters: kind get clusters"
-            ;;
-        "docker-desktop")
-            echo "🎯 Docker Desktop detectado:"
-            echo "   Dashboard disponible en Docker Desktop"
-            ;;
-    esac
+    echo "🔍 Comandos útiles:"
+    echo "   kubectl get pods -n bot-platform"
+    echo "   kubectl logs -l app=backend -n bot-platform -f"
+    echo "   kubectl describe pod <pod-name> -n bot-platform"
+    echo ""
+    
+    # Save setup info
+    cat > setup-info-local.txt << EOF
+TarDía Bot Platform - Setup Local Information
+============================================
+
+Minikube IP: $MINIKUBE_IP
+Namespace: bot-platform
+
+URLs de acceso:
+- Frontend: http://localhost:8080 (con port-forward)
+- Backend: http://localhost:8081 (con port-forward)
+- Dashboard: minikube dashboard
+
+MongoDB: MongoDB Atlas (configurado)
+
+Scripts disponibles:
+- ./start-port-forward.sh - Iniciar acceso web
+- ./monitor-local.sh - Monitorear sistema
+- ./logs-local.sh - Ver logs
+- ./restart-local.sh - Reiniciar servicios
+- ./cleanup-local.sh - Limpiar todo
+
+Setup completado: $(date)
+EOF
+    
+    log_success "Información guardada en setup-info-local.txt"
 }
 
 # Main execution
 main() {
-    echo "🚀 Iniciando setup completo..."
+    echo "🚀 Iniciando setup completo para desarrollo local..."
     echo ""
     
     check_prerequisites
-    detect_environment
-    setup_docker_environment
+    setup_minikube
     build_docker_image
     setup_kubernetes
+    deploy_applications
     wait_for_deployments
-    
-    # Debug backend if there are issues
-    if ! debug_backend_issues; then
-        log_warning "Se detectaron problemas con el backend"
-        echo ""
-        echo "🔧 Para solucionarlo:"
-        echo "   1. ./fix-atlas-connection.sh"
-        echo "   2. kubectl delete pod -l app=backend -n bot-platform"
-        echo "   3. kubectl logs -l app=backend -n bot-platform -f"
-    fi
-    
     test_services
+    create_helper_scripts
     show_final_status
-    show_access_instructions
     
     echo ""
-    log_success "✨ Setup completado!"
+    log_success "✨ Setup local completado!"
+    log_info "Ejecuta ./start-port-forward.sh para comenzar a usar la aplicación"
 }
 
 # Run main function

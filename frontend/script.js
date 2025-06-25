@@ -2,10 +2,8 @@
 let currentUser = null
 let bots = []
 
-
-// API Configuration - CAMBIO IMPORTANTE: Apuntar al backend en EC2
-const API_BASE_URL = "https://54.94.162.224/api" // Reemplaza con la IP de tu EC2
-
+// API Configuration - Configurado para desarrollo local
+const API_BASE_URL = window.location.hostname === "localhost" ? "http://localhost:8081/api" : "/api" // Para producción usa el proxy de nginx
 
 // Session management
 const SESSION_DURATION = 7 * 24 * 60 * 60 * 1000 // 7 días en milisegundos
@@ -14,6 +12,7 @@ const SESSION_DURATION = 7 * 24 * 60 * 60 * 1000 // 7 días en milisegundos
 document.addEventListener("DOMContentLoaded", () => {
   console.log("🚀 Inicializando aplicación...")
   console.log("📡 API Base URL:", API_BASE_URL)
+  console.log("🌐 Hostname:", window.location.hostname)
 
   // Check for verification token in URL
   const urlParams = new URLSearchParams(window.location.search)
@@ -337,7 +336,7 @@ async function handleLogin(e) {
     }
   } catch (error) {
     console.error("💥 Error de conexión:", error)
-    showToast(`Error de conexión: ${error.message}`, "error")
+    showToast(`Error de conexión: ${error.message}. Verifica que el backend esté ejecutándose.`, "error")
   }
 }
 
@@ -379,7 +378,7 @@ async function handleRegister(e) {
     }
   } catch (error) {
     console.error("💥 Error de conexión:", error)
-    showToast(`Error de conexión: ${error.message}`, "error")
+    showToast(`Error de conexión: ${error.message}. Verifica que el backend esté ejecutándose.`, "error")
   }
 }
 
@@ -607,6 +606,7 @@ async function loadBots() {
     }
   } catch (error) {
     console.error("💥 Error loading bots:", error)
+    showToast("Error de conexión al cargar bots. Verifica que el backend esté ejecutándose.", "error")
   }
 }
 

@@ -18,4 +18,4 @@ Scripts disponibles:
 - ./restart-local.sh - Reiniciar servicios
 - ./cleanup-local.sh - Limpiar todo
 
-Setup completado: sáb 21 jun 2025 18:49:28 -03
+Setup completado: mié 25 jun 2025 04:55:27 -03

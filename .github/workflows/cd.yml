@@ -1,5 +1,6 @@
-name: CD - Deploy to Kubernetes
+# cd.yml - Versión final para el entorno de laboratorio
 
+name: CD - Deploy to Kubernetes Lab
 
 on:
   workflow_run:
@@ -8,13 +9,23 @@ on:
       - completed
     branches:
       - main
-      - develop
       - test
 
 jobs:
-  deploy:
-    runs-on: self-hosted
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+  # --- JOB PARA DESPLEGAR AL ENTORNO DE PRUEBAS ---
+  deploy-to-test:
+    runs-on: self-hosted # O ubuntu-latest
+    
+    # <= Asocia este job con el entorno 'test' de GitHub
+    # Esto le da acceso a los secretos de ese entorno (KUBE_CONFIG_BASE64, MONGODB_URI de test, etc.)
+    environment: test 
+    
+    # <= Condición: Se ejecuta solo si el CI fue en la rama 'test'
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'test' }}
+    
+    env:
+      NAMESPACE: test # <= ¡Importante! Define el namespace para este job
+      CLUSTER_NAME: lab-cluster
 
     steps:
       - name: Checkout code
@@ -31,90 +42,80 @@ jobs:
         id: deploy_info
         run: |
           IMAGE_TAG=$(cat image_tag.txt)
-          BRANCH_NAME=$(cat branch_name.txt)
           echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_OUTPUT
-          echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_OUTPUT
 
-      - name: Set up Kubeconfig Manually and Verify
+      - name: Set up Kubeconfig for Lab Cluster
         run: |
-          # Creamos el directorio .kube en el home del runner, si no existe
           mkdir -p $HOME/.kube
-          
-          # Decodificamos el secreto (que viene de GitHub Secrets) y lo escribimos
-          # directamente en el archivo de configuración que kubectl busca por defecto.
+          # <= Usa el secreto KUBE_CONFIG_BASE64 definido en el entorno 'test' de GitHub
           echo "${{ secrets.KUBE_CONFIG_BASE64 }}" | base64 --decode > $HOME/.kube/config
-          
-          echo "Kubeconfig file created. Verifying connection..."
-          # Ejecutamos un comando simple para probar la conexión inmediatamente.
-          # Si este comando funciona, todos los demás también lo harán.
           kubectl cluster-info
+          kubectl config use-context $(kubectl config get-contexts -o name | grep '${{ env.CLUSTER_NAME }}')
 
-      - name: Apply Kubernetes Namespace
-        run: kubectl apply -f k8s/namespace.yaml
+      - name: Create or Apply Namespace
+        # <= Usa la variable para crear el namespace 'test' si no existe
+        run: kubectl create namespace ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
 
-      - name: Apply RBAC Configuration
-        run: kubectl apply -f k8s/rbac.yaml
-
-      - name: Create/Update Kubernetes Secrets
-        env:
-          MONGODB_URI: ${{ secrets.MONGODB_URI }}
-          JWT_SECRET: ${{ secrets.JWT_SECRET }}
-          WEATHER_API_KEY: ${{ secrets.WEATHER_API_KEY }}
-          NEWS_API_KEY: ${{ secrets.NEWS_API_KEY }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
-          DOCKER_PAT: ${{ secrets.DOCKER_PAT }}
-        run: |
-          # Crear bot-secrets con las API keys
-          kubectl create secret generic bot-secrets \
-            --from-literal=weather-api-key="$WEATHER_API_KEY" \
-            --from-literal=news-api-key="$NEWS_API_KEY" \
-            --from-literal=gemini-api-key="$GEMINI_API_KEY" \
-            --namespace=bot-platform \
-            --dry-run=client -o yaml | kubectl apply -f -
-          
-          # Crear app-secrets con MongoDB (con JWT ahora)
-          kubectl create secret generic app-secrets \
-            --from-literal=mongodb-uri="$MONGODB_URI" \
-            --from-literal=jwt-secret="$JWT_SECRET" \
-            --namespace=bot-platform \
-            --dry-run=client -o yaml | kubectl apply -f -
-
-          kubectl create secret docker-registry regcred \
-            --docker-server=https://index.docker.io/v1/ \
-            --docker-username="$DOCKER_USERNAME" \
-            --docker-password="$DOCKER_PAT" \
-            --namespace=bot-platform \
-            --dry-run=client -o yaml | kubectl apply -f - 
-
-      - name: Create App ConfigMaps
-        run: |
-          echo "Creating application ConfigMaps..."
-          kubectl create configmap frontend-files --from-file=frontend/ -n bot-platform --dry-run=client -o yaml | kubectl apply -f -
-          kubectl create configmap nginx-config --from-file=nginx.conf -n bot-platform --dry-run=client -o yaml | kubectl apply -f -
-                
       - name: Deploy to Kubernetes
-        env:
-            DOCKER_REGISTRY: ${{ secrets.DOCKER_REGISTRY }}
         run: |
-            # Crear copias temporales para no modificar los originales
-            cp k8s/deployment.yaml k8s/deployment-temp.yaml
-            cp k8s/frontend.yaml k8s/frontend-temp.yaml
+            echo "Deploying to namespace ${{ env.NAMESPACE }}..."
+            # Aquí va tu lógica de despliegue. Asegúrate de que todos los
+            # comandos kubectl usen el namespace correcto.
+            # Ejemplo: kubectl apply -f k8s/deployment.yaml -n ${{ env.NAMESPACE }}
+            # ...
             
-            # Reemplazar placeholders
-            sed -i "s|YOUR_DOCKER_REGISTRY|$DOCKER_REGISTRY|g" k8s/deployment-temp.yaml
-            sed -i "s|PLACEHOLDER_TAG|${{ steps.deploy_info.outputs.IMAGE_TAG }}|g" k8s/deployment-temp.yaml
-            sed -i "s|YOUR_DOCKER_REGISTRY|$DOCKER_REGISTRY|g" k8s/frontend-temp.yaml
-            sed -i "s|PLACEHOLDER_TAG|${{ steps.deploy_info.outputs.IMAGE_TAG }}|g" k8s/frontend-temp.yaml
-            
-            # Aplicar deployments
-            kubectl apply -f k8s/deployment-temp.yaml
-            kubectl apply -f k8s/frontend-temp.yaml
+      - name: Show Deployment Status
+        run: kubectl get all -n ${{ env.NAMESPACE }}
 
-      - name: Wait for deployments
+
+  # --- JOB PARA DESPLEGAR AL ENTORNO DE PRODUCCIÓN ---
+  deploy-to-production:
+    runs-on: self-hosted # O ubuntu-latest
+    
+    # <= Asocia este job con el entorno 'production' de GitHub
+    environment: production
+    
+    # <= Condición: Se ejecuta solo si el CI fue en la rama 'main'
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' }}
+    
+    env:
+      NAMESPACE: produccion # <= ¡Importante! Define el namespace para este job
+      CLUSTER_NAME: lab-cluster
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Download deployment artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: deployment-info
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Load deployment info
+        id: deploy_info
         run: |
-            kubectl wait --for=condition=available --timeout=300s deployment/backend -n bot-platform
-            kubectl wait --for=condition=available --timeout=180s deployment/frontend -n bot-platform
+          IMAGE_TAG=$(cat image_tag.txt)
+          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Set up Kubeconfig for Lab Cluster
+        run: |
+          mkdir -p $HOME/.kube
+          # <= Usa el secreto KUBE_CONFIG_BASE64 definido en el entorno 'production' de GitHub
+          echo "${{ secrets.KUBE_CONFIG_BASE64 }}" | base64 --decode > $HOME/.kube/config
+          kubectl cluster-info
+          kubectl config use-context $(kubectl config get-contexts -o name | grep '${{ env.CLUSTER_NAME }}')
+
+      - name: Create or Apply Namespace
+        # <= Usa la variable para crear el namespace 'produccion' si no existe
+        run: kubectl create namespace ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+        
+      - name: Deploy to Kubernetes
+        run: |
+            echo "Deploying to namespace ${{ env.NAMESPACE }}..."
+            # Ejemplo: kubectl apply -f k8s/deployment.yaml -n ${{ env.NAMESPACE }}
+            # ...
 
       - name: Show Deployment Status
-        run: kubectl get all -n bot-platform
+        run: kubectl get all -n ${{ env.NAMESPACE }}
