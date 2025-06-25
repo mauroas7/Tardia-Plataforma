@@ -19,9 +19,9 @@ jobs:
     if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'test' }}
     
     env:
-      NAMESPACE: test
+      NAMESPACE: bot-platform
       CLUSTER_NAME: lab-cluster
-      # Asegúrate de que este secreto exista en GitHub con tu usuario de DockerHub (ej: tardiatest)
+      
       DOCKER_REGISTRY: ${{ secrets.DOCKER_REGISTRY }}
 
     steps:
