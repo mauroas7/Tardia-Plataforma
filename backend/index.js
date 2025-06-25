@@ -43,29 +43,8 @@ process.on("unhandledRejection", (reason, promise) => {
   process.exit(1)
 })
 
-// CORS configuration for Vercel frontend
-const corsOptions = {
-  origin: [
-    "http://localhost:3000",
-    "http://localhost:8080",
-    "https://plataformatardiadevelop.vercel.app/", // Reemplaza con tu dominio de Vercel
-    process.env.FRONTEND_URL,
-  ].filter(Boolean),
-  credentials: true,
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-}
 
-// Middleware
-
-app.use(cors({
-  origin: 'https://plataformatardiadevelop.vercel.app' 
-}));
-
-app.use(express.json({ limit: "10mb" }))
-app.use(express.static("public"))
-
-// Environment variables - Configuración para EC2
+// Environment variables - Configuración para desarrollo local
 const PORT = process.env.PORT || 3000
 const JWT_SECRET = process.env.JWT_SECRET || "cloud-bot-secret-key-2024"
 const MONGODB_URI =
@@ -76,7 +55,40 @@ const KUBERNETES_NAMESPACE = process.env.KUBERNETES_NAMESPACE || "bot-platform"
 // Configuración de Nodemailer con Gmail
 const EMAIL_USER = process.env.EMAIL_USER || "tardiainfo@gmail.com"
 const EMAIL_PASS = process.env.EMAIL_PASS // App Password de Gmail
-const FRONTEND_URL = process.env.FRONTEND_URL || "https://your-frontend-app.vercel.app"
+const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:8080"
+
+// CORS configuration - CORREGIDO para desarrollo local
+const corsOptions = {
+  origin: [
+    "http://localhost:8080",
+    "http://localhost:3000",
+    "http://127.0.0.1:8080",
+    "http://127.0.0.1:3000",
+    FRONTEND_URL,
+    "https://plataformatardiadevelop.vercel.app",
+  ].filter(Boolean),
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept", "Origin"],
+  optionsSuccessStatus: 200, // Para navegadores legacy
+}
+
+// Middleware - APLICAR CORS ANTES QUE CUALQUIER OTRA COSA
+app.use(cors(corsOptions))
+
+// Middleware adicional para debugging CORS
+app.use((req, res, next) => {
+  log("info", "Request received", {
+    method: req.method,
+    url: req.url,
+    origin: req.headers.origin,
+    userAgent: req.headers["user-agent"]?.substring(0, 50),
+  })
+  next()
+})
+
+app.use(express.json({ limit: "10mb" }))
+app.use(express.static("public"))
 
 // Crear transporter de Nodemailer
 const createEmailTransporter = () => {
@@ -99,7 +111,7 @@ const createEmailTransporter = () => {
 
 const emailTransporter = createEmailTransporter()
 
-log("info", "Starting Cloud Bot Platform API on EC2", {
+log("info", "Starting Cloud Bot Platform API", {
   port: PORT,
   frontendUrl: FRONTEND_URL,
   mongoUri: MONGODB_URI.replace(/\/\/.*@/, "//***:***@"),
@@ -109,6 +121,7 @@ log("info", "Starting Cloud Bot Platform API on EC2", {
   nodeVersion: process.version,
   platform: process.platform,
   workingDirectory: process.cwd(),
+  corsOrigins: corsOptions.origin,
 })
 
 // MongoDB connection
@@ -252,7 +265,7 @@ const authenticateToken = (req, res, next) => {
 
 // Routes
 
-// Health check
+// Health check - MEJORADO con información de CORS
 app.get("/health", (req, res) => {
   const healthData = {
     status: "healthy",
@@ -264,6 +277,7 @@ app.get("/health", (req, res) => {
       emailUser: EMAIL_USER,
     },
     frontendUrl: FRONTEND_URL,
+    corsOrigins: corsOptions.origin,
     memory: process.memoryUsage(),
     version: "1.0.0",
     environment: process.env.NODE_ENV || "development",
@@ -271,6 +285,19 @@ app.get("/health", (req, res) => {
 
   log("info", "Health check requested", healthData)
   res.json(healthData)
+})
+
+// Test endpoint para verificar CORS
+app.get("/api/test", (req, res) => {
+  log("info", "Test endpoint called", {
+    origin: req.headers.origin,
+    method: req.method,
+  })
+  res.json({
+    message: "CORS test successful",
+    timestamp: new Date().toISOString(),
+    origin: req.headers.origin,
+  })
 })
 
 // Auth routes
@@ -300,7 +327,7 @@ app.post("/api/auth/register", async (req, res) => {
     })
     await user.save()
 
-    // URL de verificación apuntando al frontend en Vercel
+    // URL de verificación apuntando al frontend
     const verificationUrl = `${FRONTEND_URL}/verify-email?token=${verificationToken}`
 
     log("info", "Generated verification URL", {
@@ -407,7 +434,7 @@ app.get("/api/auth/verify-email/:token", async (req, res) => {
 app.post("/api/auth/login", async (req, res) => {
   try {
     const { email, password } = req.body
-    log("info", "Login attempt", { email })
+    log("info", "Login attempt", { email, origin: req.headers.origin })
 
     const user = await User.findOne({ email })
     if (!user) {
@@ -873,12 +900,14 @@ app.delete("/api/bots/:id", authenticateToken, async (req, res) => {
 
 // Start server
 app.listen(PORT, "0.0.0.0", () => {
-  log("info", "Server started successfully on EC2", {
+  log("info", "Server started successfully", {
     port: PORT,
     host: "0.0.0.0",
     healthEndpoint: `http://localhost:${PORT}/health`,
+    testEndpoint: `http://localhost:${PORT}/api/test`,
     kubernetesNamespace: KUBERNETES_NAMESPACE,
     frontendUrl: FRONTEND_URL,
+    corsOrigins: corsOptions.origin,
   })
 })
 
