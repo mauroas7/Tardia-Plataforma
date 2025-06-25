@@ -1,13 +1,10 @@
-# k8s/frontend.yaml - Versión Final Simplificada
+
 
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: frontend
   namespace: bot-platform
-  labels:
-    app: frontend
-    tier: web
 spec:
   replicas: 2
   selector:
@@ -17,7 +14,6 @@ spec:
     metadata:
       labels:
         app: frontend
-        tier: web
     spec:
       containers:
       - name: frontend
@@ -26,22 +22,22 @@ spec:
         imagePullPolicy: Always
         ports:
         - containerPort: 80
-       
+        
+        
         volumeMounts:
-        - name: nginx-config
+        - name: nginx-config-volume
           mountPath: /etc/nginx/conf.d/default.conf
           subPath: default.conf 
       volumes:
-      
-      - name: nginx-config
+     
+      - name: nginx-config-volume
         configMap:
           name: nginx-config
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: frontend
- 
+  name: frontend-service 
   namespace: bot-platform
 spec:
   selector:
@@ -49,5 +45,4 @@ spec:
   ports:
   - port: 80
     targetPort: 80
-
   type: LoadBalancer
