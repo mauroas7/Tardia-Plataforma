@@ -48,7 +48,7 @@ const corsOptions = {
   origin: [
     "http://localhost:3000",
     "http://localhost:8080",
-    "https://your-frontend-app.vercel.app", // Reemplaza con tu dominio de Vercel
+    "https://plataformatardiadevelop.vercel.app/", // Reemplaza con tu dominio de Vercel
     process.env.FRONTEND_URL,
   ].filter(Boolean),
   credentials: true,
