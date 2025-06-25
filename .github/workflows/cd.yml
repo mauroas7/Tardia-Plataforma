@@ -1,4 +1,4 @@
-# cd.yml - Versión final para el entorno de laboratorio
+# cd.yml - Versión final y completa
 
 name: CD - Deploy to Kubernetes Lab
 
@@ -14,18 +14,15 @@ on:
 jobs:
   # --- JOB PARA DESPLEGAR AL ENTORNO DE PRUEBAS ---
   deploy-to-test:
-    runs-on: self-hosted # O ubuntu-latest
-    
-    # <= Asocia este job con el entorno 'test' de GitHub
-    # Esto le da acceso a los secretos de ese entorno (KUBE_CONFIG_BASE64, MONGODB_URI de test, etc.)
+    runs-on: self-hosted
     environment: test 
-    
-    # <= Condición: Se ejecuta solo si el CI fue en la rama 'test'
     if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'test' }}
     
     env:
-      NAMESPACE: test # <= ¡Importante! Define el namespace para este job
+      NAMESPACE: test
       CLUSTER_NAME: lab-cluster
+      # Asegúrate de que este secreto exista en GitHub con tu usuario de DockerHub (ej: tardiatest)
+      DOCKER_REGISTRY: ${{ secrets.DOCKER_REGISTRY }}
 
     steps:
       - name: Checkout code
@@ -47,22 +44,33 @@ jobs:
       - name: Set up Kubeconfig for Lab Cluster
         run: |
           mkdir -p $HOME/.kube
-          # <= Usa el secreto KUBE_CONFIG_BASE64 definido en el entorno 'test' de GitHub
           echo "${{ secrets.KUBE_CONFIG_BASE64 }}" | base64 --decode > $HOME/.kube/config
           kubectl cluster-info
           kubectl config use-context $(kubectl config get-contexts -o name | grep '${{ env.CLUSTER_NAME }}')
 
       - name: Create or Apply Namespace
-        # <= Usa la variable para crear el namespace 'test' si no existe
-        run: kubectl create namespace ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+        run: kubectl get namespace ${{ env.NAMESPACE }} || kubectl create namespace ${{ env.NAMESPACE }}
 
+      # <= SECCIÓN MODIFICADA Y COMPLETADA
       - name: Deploy to Kubernetes
         run: |
-            echo "Deploying to namespace ${{ env.NAMESPACE }}..."
-            # Aquí va tu lógica de despliegue. Asegúrate de que todos los
-            # comandos kubectl usen el namespace correcto.
-            # Ejemplo: kubectl apply -f k8s/deployment.yaml -n ${{ env.NAMESPACE }}
-            # ...
+          echo "Deploying to namespace ${{ env.NAMESPACE }} with image tag ${{ steps.deploy_info.outputs.IMAGE_TAG }}"
+          
+          # 1. Reemplaza la etiqueta de la imagen en los archivos de despliegue
+          sed -i 's|image:.*tardia-plataforma-backend.*|image: ${{ env.DOCKER_REGISTRY }}/tardia-plataforma-backend:${{ steps.deploy_info.outputs.IMAGE_TAG }}|g' k8s/deployment.yaml
+          sed -i 's|image:.*tardia-plataforma-frontend.*|image: ${{ env.DOCKER_REGISTRY }}/tardia-plataforma-frontend:${{ steps.deploy_info.outputs.IMAGE_TAG }}|g' k8s/frontend.yaml
+          
+          # 2. Aplica todos los manifiestos de Kubernetes
+          echo "Applying Kubernetes manifests..."
+          kubectl apply -f k8s/rbac.yaml
+          kubectl apply -f k8s/configmaps.yaml -n ${{ env.NAMESPACE }}
+          kubectl apply -f k8s/deployment.yaml -n ${{ env.NAMESPACE }}
+          kubectl apply -f k8s/frontend.yaml -n ${{ env.NAMESPACE }}
+          
+          # 3. Espera a que los despliegues estén listos
+          echo "Deployments applied. Waiting for rollout..."
+          kubectl rollout status deployment/backend -n ${{ env.NAMESPACE }} --timeout=5m
+          kubectl rollout status deployment/frontend -n ${{ env.NAMESPACE }} --timeout=3m
             
       - name: Show Deployment Status
         run: kubectl get all -n ${{ env.NAMESPACE }}
@@ -70,17 +78,14 @@ jobs:
 
   # --- JOB PARA DESPLEGAR AL ENTORNO DE PRODUCCIÓN ---
   deploy-to-production:
-    runs-on: self-hosted # O ubuntu-latest
-    
-    # <= Asocia este job con el entorno 'production' de GitHub
+    runs-on: self-hosted
     environment: production
-    
-    # <= Condición: Se ejecuta solo si el CI fue en la rama 'main'
     if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' }}
     
     env:
-      NAMESPACE: produccion # <= ¡Importante! Define el namespace para este job
+      NAMESPACE: produccion
       CLUSTER_NAME: lab-cluster
+      DOCKER_REGISTRY: ${{ secrets.DOCKER_REGISTRY }}
 
     steps:
       - name: Checkout code
@@ -102,20 +107,33 @@ jobs:
       - name: Set up Kubeconfig for Lab Cluster
         run: |
           mkdir -p $HOME/.kube
-          # <= Usa el secreto KUBE_CONFIG_BASE64 definido en el entorno 'production' de GitHub
           echo "${{ secrets.KUBE_CONFIG_BASE64 }}" | base64 --decode > $HOME/.kube/config
           kubectl cluster-info
           kubectl config use-context $(kubectl config get-contexts -o name | grep '${{ env.CLUSTER_NAME }}')
 
       - name: Create or Apply Namespace
-        # <= Usa la variable para crear el namespace 'produccion' si no existe
-        run: kubectl create namespace ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+        run: kubectl get namespace ${{ env.NAMESPACE }} || kubectl create namespace ${{ env.NAMESPACE }}
         
+      # <= SECCIÓN MODIFICADA Y COMPLETADA
       - name: Deploy to Kubernetes
         run: |
-            echo "Deploying to namespace ${{ env.NAMESPACE }}..."
-            # Ejemplo: kubectl apply -f k8s/deployment.yaml -n ${{ env.NAMESPACE }}
-            # ...
+          echo "Deploying to namespace ${{ env.NAMESPACE }} with image tag ${{ steps.deploy_info.outputs.IMAGE_TAG }}"
+
+          # 1. Reemplaza la etiqueta de la imagen en los archivos de despliegue
+          sed -i 's|image:.*tardia-plataforma-backend.*|image: ${{ env.DOCKER_REGISTRY }}/tardia-plataforma-backend:${{ steps.deploy_info.outputs.IMAGE_TAG }}|g' k8s/deployment.yaml
+          sed -i 's|image:.*tardia-plataforma-frontend.*|image: ${{ env.DOCKER_REGISTRY }}/tardia-plataforma-frontend:${{ steps.deploy_info.outputs.IMAGE_TAG }}|g' k8s/frontend.yaml
+          
+          # 2. Aplica todos los manifiestos de Kubernetes
+          echo "Applying Kubernetes manifests..."
+          kubectl apply -f k8s/rbac.yaml
+          kubectl apply -f k8s/configmaps.yaml -n ${{ env.NAMESPACE }}
+          kubectl apply -f k8s/deployment.yaml -n ${{ env.NAMESPACE }}
+          kubectl apply -f k8s/frontend.yaml -n ${{ env.NAMESPACE }}
+
+          # 3. Espera a que los despliegues estén listos
+          echo "Deployments applied. Waiting for rollout..."
+          kubectl rollout status deployment/backend -n ${{ env.NAMESPACE }} --timeout=5m
+          kubectl rollout status deployment/frontend -n ${{ env.NAMESPACE }} --timeout=3m
 
       - name: Show Deployment Status
         run: kubectl get all -n ${{ env.NAMESPACE }}
