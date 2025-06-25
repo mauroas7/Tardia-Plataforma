@@ -381,12 +381,14 @@ EOF
     log_success "Deployment aplicado correctamente"
 }
 
+# =================================================================
+# FUNCIÓN CORREGIDA
+# =================================================================
 # Configurar acceso externo
 setup_external_access() {
-    log_info "Configurando acceso externo..."
+    log_info "Configurando acceso externo con LoadBalancer..."
     
-    # Crear servicio NodePort para acceso externo
-    cat > k8s/backend-nodeport.yaml << EOF
+    cat > k8s/backend-service-lb.yaml << EOF
 apiVersion: v1
 kind: Service
 metadata:
@@ -398,30 +400,31 @@ spec:
   ports:
   - port: 3000
     targetPort: 3000
-    nodePort: 30000
     protocol: TCP
-  type: NodePort
+  type: LoadBalancer
 EOF
 
-    kubectl apply -f k8s/backend-nodeport.yaml
+    kubectl apply -f k8s/backend-service-lb.yaml
     
-    log_success "Acceso externo configurado en puerto 30000"
+    log_success "Servicio LoadBalancer para el backend aplicado"
 }
 
+# =================================================================
+# FUNCIÓN CORREGIDA
+# =================================================================
 # Configurar firewall
 setup_firewall() {
     log_info "Configurando firewall..."
     
-    # Permitir puertos necesarios
+    # Permitir puertos estándar
     sudo ufw allow ssh
-    sudo ufw allow 30000  # Puerto NodePort para el backend
-    sudo ufw allow 80     # HTTP
-    sudo ufw allow 443    # HTTPS
+    sudo ufw allow 80     # HTTP (para Nginx)
+    sudo ufw allow 443    # HTTPS (para Nginx)
     
     # Habilitar firewall
     sudo ufw --force enable
     
-    log_success "Firewall configurado"
+    log_success "Firewall configurado para Nginx"
 }
 
 # Esperar a que los deployments estén listos
@@ -445,17 +448,18 @@ test_services() {
     
     # Obtener IP del nodo Minikube
     MINIKUBE_IP=$(minikube ip)
+    EC2_PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || echo "TU-EC2-IP")
     
-    # Probar health check
-    log_info "Probando health check en ${MINIKUBE_IP}:30000..."
+    # Probar health check via Nginx
+    log_info "Probando health check en http://${EC2_PUBLIC_IP}/health..."
     
     # Esperar un poco para que el servicio esté listo
     sleep 10
     
-    if curl -f http://${MINIKUBE_IP}:30000/health > /dev/null 2>&1; then
-        log_success "Backend responde correctamente"
+    if curl -f http://localhost/health > /dev/null 2>&1; then
+        log_success "Nginx y Backend responden correctamente"
     else
-        log_warning "Backend no responde al health check"
+        log_warning "Nginx o Backend no responden al health check"
         log_info "Verificando logs del backend..."
         kubectl logs -l app=backend -n bot-platform --tail=10
     fi
@@ -483,20 +487,14 @@ show_final_status() {
 
 # Mostrar instrucciones de acceso
 show_access_instructions() {
-    MINIKUBE_IP=$(minikube ip)
     EC2_PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || echo "TU-EC2-IP")
     
     echo ""
     log_success "🎉 ¡Despliegue completado exitosamente!"
     echo ""
-    echo "🔗 URLs de acceso:"
-    echo "   - Backend (interno): http://${MINIKUBE_IP}:30000"
-    echo "   - Backend (externo): http://${EC2_PUBLIC_IP}:30000"
-    echo "   - Health check: http://${EC2_PUBLIC_IP}:30000/health"
-    echo ""
-    echo "📱 Para conectar desde Vercel:"
+    echo "🔗 URL de acceso para Vercel:"
     echo "   Actualiza la variable API_BASE_URL en tu frontend a:"
-    echo "   const API_BASE_URL = \"http://${EC2_PUBLIC_IP}:30000/api\""
+    echo "   const API_BASE_URL = \"http://${EC2_PUBLIC_IP}/api\""
     echo ""
     echo "🔍 Comandos útiles:"
     echo "   - Ver logs: kubectl logs -l app=backend -n bot-platform -f"
@@ -505,15 +503,7 @@ show_access_instructions() {
     echo "   - Dashboard: minikube dashboard"
     echo ""
     echo "🛠️ Minikube:"
-    echo "   - Estado: minikube status"
-    echo "   - IP: minikube ip"
-    echo "   - SSH: minikube ssh"
-    echo ""
-    echo "🔧 Configuración importante:"
-    echo "   - Security Group EC2: Permitir puerto 30000"
-    echo "   - Frontend URL configurada: https://plataformatardiadevelop.vercel.app/"
-    echo "   - MongoDB Atlas: Configurado"
-    echo "   - Email Gmail: Configurado"
+    echo "   - Iniciar túnel (en otra terminal): minikube tunnel"
     echo ""
 }
 
@@ -535,7 +525,8 @@ main() {
     setup_external_access
     setup_firewall
     wait_for_deployments
-    test_services
+    # La prueba se hará manualmente después de iniciar el túnel
+    # test_services 
     show_final_status
     show_access_instructions
     
@@ -543,11 +534,11 @@ main() {
     log_success "✨ Despliegue completado!"
     echo ""
     log_info "💡 Próximos pasos:"
-    echo "1. Configura el Security Group de EC2 para permitir puerto 30000"
-    echo "2. Actualiza la URL del API en tu frontend de Vercel"
-    echo "3. Prueba la conexión desde Vercel"
+    echo "1. Configura el Security Group de EC2 para permitir puerto 80 (HTTP)"
+    echo "2. Inicia el túnel en una SEGUNDA terminal con 'minikube tunnel'"
+    echo "3. Prueba la conexión con 'curl http://localhost/health'"
+    echo "4. Actualiza la URL del API en tu frontend de Vercel y despliega"
 }
 
 # Ejecutar función principal
 main "$@"
-
