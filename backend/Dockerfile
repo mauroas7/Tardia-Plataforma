@@ -1,46 +1,37 @@
 FROM node:18-alpine
 
-# Install system dependencies
+# Instalar dependencias del sistema
 RUN apk add --no-cache \
     curl \
-    docker-cli \
     bash \
-    && curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" \
-    && chmod +x kubectl \
-    && mv kubectl /usr/local/bin/
+    docker \
+    kubectl
 
-# Create app directory
+# Crear directorio de trabajo
 WORKDIR /app
 
-# Create non-root user
-RUN addgroup -g 1001 -S nodejs && \
-    adduser -S -u 1001 -G $(getent group 999 | cut -d: -f1) nodejs
-
-# Copy package files
+# Copiar package.json y package-lock.json
 COPY package*.json ./
 
-# Install dependencies and generate package-lock.json
-RUN npm install --production && npm cache clean --force
+# Instalar dependencias
+RUN npm ci --only=production
 
-# Copy source code
-COPY --chown=nodejs:nodejs . .
+# Copiar código fuente
+COPY . .
 
-# Copy bot templates to the container
-COPY --chown=nodejs:nodejs bot-templates ./bot-templates
+# Crear directorio para logs
+RUN mkdir -p logs
 
-# Create necessary directories
-RUN mkdir -p generated-bots public logs && \
-    chown -R nodejs:nodejs /app
+# Crear directorio para bots generados
+RUN mkdir -p generated-bots
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-  CMD curl -f http://localhost:3000/health || exit 1
-
-# Expose port
+# Exponer puerto
 EXPOSE 3000
 
-# Switch to non-root user
-USER nodejs
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:3000/health || exit 1
 
-# Start the application
-CMD ["npm", "start"]
+# Comando por defecto
+CMD ["node", "index.js"]
+
