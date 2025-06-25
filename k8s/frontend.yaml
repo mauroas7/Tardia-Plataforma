@@ -18,7 +18,7 @@ spec:
       containers:
       - name: frontend
         
-        image: tardiatest/tardia-plataforma-frontend:latest
+        image: tardiatest/frontend:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 80
