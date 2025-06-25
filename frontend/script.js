@@ -2,8 +2,10 @@
 let currentUser = null
 let bots = []
 
-// API Configuration - Detectar automáticamente la URL base
-const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8080/api";
+
+// API Configuration - CAMBIO IMPORTANTE: Apuntar al backend en EC2
+const API_BASE_URL = "http://54.233.13.218:3000/api" // Reemplaza con la IP de tu EC2
+
 
 // Session management
 const SESSION_DURATION = 7 * 24 * 60 * 60 * 1000 // 7 días en milisegundos
@@ -11,6 +13,7 @@ const SESSION_DURATION = 7 * 24 * 60 * 60 * 1000 // 7 días en milisegundos
 // Initialize app
 document.addEventListener("DOMContentLoaded", () => {
   console.log("🚀 Inicializando aplicación...")
+  console.log("📡 API Base URL:", API_BASE_URL)
 
   // Check for verification token in URL
   const urlParams = new URLSearchParams(window.location.search)
