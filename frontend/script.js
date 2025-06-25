@@ -3,7 +3,7 @@ let currentUser = null
 let bots = []
 
 // API Configuration - Configurado para desarrollo local
-const API_BASE_URL = window.location.hostname === "localhost" ? "http://localhost:8081/api" : "/api" // Para producción usa el proxy de nginx
+const API_BASE_URL = window.location.hostname === "localhost" ? "http://localhost:8080/api" : "/api" // Para producción usa el proxy de nginx
 
 // Session management
 const SESSION_DURATION = 7 * 24 * 60 * 60 * 1000 // 7 días en milisegundos
