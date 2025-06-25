@@ -28,18 +28,6 @@ log_error() {
     echo -e "${RED}❌ $1${NC}"
 }
 
-# Verificar que estamos en EC2
-check_environment() {
-    log_info "Verificando entorno EC2..."
-    
-    # Verificar que estamos en una instancia EC2
-    if ! curl -s --max-time 3 http://169.254.169.254/latest/meta-data/instance-id > /dev/null; then
-        log_warning "No se detectó instancia EC2, continuando de todas formas..."
-    else
-        log_success "Instancia EC2 detectada"
-    fi
-    
-   
 
 # Instalar dependencias del sistema
 install_system_dependencies() {
