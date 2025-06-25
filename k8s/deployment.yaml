@@ -20,7 +20,7 @@ spec:
       serviceAccountName: bot-creator-account
       containers:
       - name: backend
-        image: cloud-bot-platform:latest
+        image: tardiatest/tardia-plataforma-backend:latest
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 3000
